@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.o
+*~
+helpers/__pycache__
+adc/adc_dac_inputs/
+training/console_output/
+training/cross_sim_models/
+training/sweep_results/
+training/weight_update_stats/
+inference/errorloop_outputs/
