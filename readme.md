@@ -51,7 +51,7 @@ Methods for applying device-specific models for programming errors, cycle-to-cyc
 ```
 To implement a new device model for use in inference simulations, a new device model can be added as an option in these files. Please see Chapters 7.2-7.4 of the [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual.pdf) for more details.
 
-## Adding New Models, Datasets and Devices for Training
+## Adding New Neural Network Models, Datasets, and Device Lookup Tables
 To use your own pretrained models and datasets for use with CrossSim Inference, or your own device experimental data for use with CrossSim Training, modify the url field in the .gitmodules folder. If you have no yet initialized the submodules, use the commands above. To change the submodule url after the submodules have been initialized, use the following commands:
 ```
 git submodule sync
