@@ -71,3 +71,6 @@ If you use CrossSim for research please cite:
   url = {https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual.pdf},
 }
 ```
+
+## Contact Us
+For questions, feature requests, bug reports, or suggestions, please submit a new issue through GitHub. The team will get back to you as soon as we can.
