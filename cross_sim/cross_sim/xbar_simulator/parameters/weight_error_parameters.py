@@ -20,8 +20,8 @@ from .parameter_defaults import CrossbarTypeEnum
 
 class WeightErrorParameters(ParametersBase):
     """
-	parameters for weight drift
-	"""
+    parameters for weight drift
+    """
     if False:
         sigma_error = float
         error_model = str
@@ -114,10 +114,10 @@ class WeightErrorParameters(ParametersBase):
 
     # Apply programming error
     # Mode:
-    #	'none' : don't apply any error
-    #	'alpha' : single sigma error value for all weights
-    #	'multiAlpha' : provide a vector of sigma error values and interpolate betwen them
-    #	'SONOS' : use an analytical expression for the sigma vs weight for SONOS
+    #   'none' : don't apply any error
+    #   'alpha' : single sigma error value for all weights
+    #   'multiAlpha' : provide a vector of sigma error values and interpolate betwen them
+    #   'SONOS' : use an analytical expression for the sigma vs weight for SONOS
     #   'DWMTJ' : use an analytical expression for the sigma vs weight for DWMTJ (straight)
     def applyProgrammingError(self, input_, vcp):
 
@@ -149,7 +149,10 @@ class WeightErrorParameters(ParametersBase):
             if not self.proportional:
                 sigma *= vcp.range
             if self.sigma_error > 0:
-                randMat = ncp.random.normal(scale=sigma, size=input_.shape, dtype=input_.dtype)
+                if self.param_root.numeric_params.useGPU:
+                    randMat = ncp.random.normal(scale=sigma, size=input_.shape, dtype=input_.dtype)
+                else:
+                    randMat = ncp.random.normal(scale=sigma, size=input_.shape).astype(input_.dtype)
                 if self.proportional:
                     randMat += 1
                     input_ *= randMat
@@ -169,12 +172,16 @@ class WeightErrorParameters(ParametersBase):
             # --- DEPRECATED ---
             # Rather than this, define a custom error model in weight_error_device_custom.py
             # Linearly interpolate the programming error sigma based on
-            #	A vector of initial weights W0_vec
-            #	A vector of corresponding programming errors sigma0_vec
+            #   A vector of initial weights W0_vec
+            #   A vector of corresponding programming errors sigma0_vec
             if self.sigma0_vec.any():
                 output = input_.copy()
                 numBins = len(self.W0_vec) + 1
-                randMat = ncp.random.normal(scale=vcp.range, size=input_.shape, dtype=input_.dtype)
+                if self.param_root.numeric_params.useGPU:
+                    randMat = ncp.random.normal(size=input_.shape, dtype=input_.dtype)
+                else:
+                    randMat = ncp.random.normal(size=input_.shape).astype(input_.dtype)
+                    
                 for k in range(numBins):
                     if k == 0:
                         bin_k = (input_ <= self.W0_vec[0])
@@ -191,12 +198,14 @@ class WeightErrorParameters(ParametersBase):
                     sigma0k, sigma0kprev = self.sigma0_vec[m], self.sigma0_vec[mprev]
                     sigma0s = ((sigma0k - sigma0kprev) / (Wk - Wkprev)) * input_ + (
                                 sigma0kprev * Wk - sigma0k * Wkprev) / (Wk - Wkprev)
-                    varMat = sigma0s * randMat
-
+                    
                     # Apply programming error
                     if self.proportional:
+                        varMat = sigma0s * randMat
                         output *= bin_k * (1 + varMat)
                     else:
+                        sigma0s *= vcp.range
+                        varMat = sigma0s * randMat
                         output += bin_k * varMat
 
                 # Clip values and mask (if depthwise)
@@ -239,11 +248,11 @@ class WeightErrorParameters(ParametersBase):
 
     def applyDrift(self, input_, vcp):
         """
-		:param input_: the set of weights to apply drift to
-		:param vcp:  value constraint parameters:  the value constraint parameter object that has the overall clipping rrange
-		:type vcp: ClipQuantizeAndNoiseConstraints
-		:return: input with the appropriate drift and time-dependent errors added
-		"""
+        :param input_: the set of weights to apply drift to
+        :param vcp:  value constraint parameters:  the value constraint parameter object that has the overall clipping rrange
+        :type vcp: ClipQuantizeAndNoiseConstraints
+        :return: input with the appropriate drift and time-dependent errors added
+        """
 
         # If there is no drift, return the input
         if self.T == 0 or self.drift_model == "none":

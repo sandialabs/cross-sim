@@ -11,15 +11,8 @@ from .base import ParametersBase, Parameter
 from . import parameter_defaults as params
 from .parameter_defaults import CrossbarTypeEnum, SimTypeEnum
 
-# from .base import ParametersBase, Parameter, make_type_validator, AbstractParametersBase
-
 import numpy as np
 import time
-
-# __all__ = ['ClipConstraints', 'NormalError', 'UniformError', 'QuantizationAndNoiseConstraints', 'ClipQuantizeAndNoiseConstraints', 'RequiredCoreClipConstraints', 'SupplementalCoreClipConstraints', 'AllCoreClipConstraints', 'CoreQuantizationConstraints', 'CoreValueConstraints']
-
-
-
 
 class ClipConstraints(ParametersBase):
 
@@ -27,7 +20,6 @@ class ClipConstraints(ParametersBase):
         if (self.maximum is not None) and (self.minimum is not None):
             self.override_readonly = True
 
-            #         print('ClipConstraints.post_set')
             self.range = self.maximum - self.minimum
             self.middle = (self.range / 2.0) + self.minimum
             self.absmaxmin = max(abs(self.maximum), abs(self.minimum))
@@ -146,6 +138,7 @@ class NormalError(ParametersBase):
             cp.cuda.Device(self.param_root.numeric_params.gpu_id).use()
             ncp = cp
         else:
+            rng = np.random.default_rng()
             ncp = np
 
         # Clip noised result?
@@ -182,7 +175,11 @@ class NormalError(ParametersBase):
                 pregenShape[1] = Nrows
 
             if self.randMat_pregen is None:
-                self.randMat_pregen = ncp.random.normal(scale=sigma, size=pregenShape, dtype=input_.dtype)
+                if self.param_root.numeric_params.useGPU:
+                    self.randMat_pregen = ncp.random.normal(scale=sigma, size=pregenShape, dtype=input_.dtype)
+                else:
+                    self.randMat_pregen = ncp.random.normal(scale=sigma, size=pregenShape).astype(input_.dtype)
+
             else:
                 if self.rowShuffle:
                     self.randMat_pregen = self.randMat_pregen[np.random.permutation(pregenShape[0]),:]
@@ -195,7 +192,12 @@ class NormalError(ParametersBase):
         # sliding windows are batched
         if not is_depthwise:
             if not (self.param_root.numeric_params.read_noise.pregenRandom and batched):
-                Rall = ncp.random.normal(scale=1,size=input_.shape)
+
+                if self.param_root.numeric_params.useGPU:
+                    Rall = ncp.random.normal(scale=1, size=input_.shape, dtype=input_.dtype)
+                else:
+                    Rall = rng.standard_normal(size=input_.shape, dtype=input_.dtype)
+
                 if noise_model == "alpha":
                     Rall *= sigma
                 else:
@@ -211,7 +213,11 @@ class NormalError(ParametersBase):
 
         else:
             if not self.param_root.numeric_params.read_noise.pregenRandom:
-                Rmat = ncp.random.normal(scale=1, size=(input_.shape[0],Nrows))
+                if self.param_root.numeric_params.useGPU:
+                    Rmat = ncp.random.normal(scale=1, size=(input_.shape[0],Nrows), dtype=input_.dtype)
+                else:
+                    Rmat = rng.standard_normal(size=(input_.shape[0],Nrows), dtype=input_.dtype)
+
                 if noise_model == "alpha":
                     Rmat *= sigma
                 else:
@@ -296,7 +302,7 @@ class UniformError(ParametersBase):
             y_par = self.param_root.numeric_params.y_par
 
             if input_.ndim!=2 or (x_par == 1 and y_par == 1):
-                rand = np.random.uniform(low=-half_error, high=half_error, size=input_.shape, dtype=input_.dtype)
+                rand = np.random.uniform(low=-half_error, high=half_error, size=input_.shape).astype(input_.dtype)
                 input_ += rand
                 if self.keep_within_range and not self.param_root.algorithm_params.disable_clipping:
                     input_ = vcp.clip(input_)
@@ -305,7 +311,7 @@ class UniformError(ParametersBase):
                 Ncopy = x_par * y_par
                 Nx0,Ny0 = input_.shape[0]//Ncopy, input_.shape[1]//Ncopy
                 randshape = (Nx0,Ny0*Ncopy)
-                rand = np.random.uniform(low=-half_error, high=half_error, size=randshape, dtype=input_.dtype)
+                rand = np.random.uniform(low=-half_error, high=half_error, size=randshape, dtype=input_.dtype).astype(input_.dtype)
                 for m in range(Ncopy):
                     x_start, x_end = m*Nx0, (m+1)*Nx0
                     y_start, y_end = m*Ny0, (m+1)*Ny0

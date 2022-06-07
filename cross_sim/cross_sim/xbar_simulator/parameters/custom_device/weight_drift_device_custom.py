@@ -140,7 +140,10 @@ def applyDriftModel(input_, T, drift_model, vcp, param_root, clip_output, mask):
         input_ = vcp.minimum + vcp.range*(I - Imin)/(Imax - Imin)
 
         if sigma_W.any():
-            randMat = ncp.random.normal(scale=vcp.range, size=input_.shape, dtype=input_.dtype)
+            if param_root.numeric_params.useGPU:
+                randMat = ncp.random.normal(scale=vcp.range, size=input_.shape, dtype=input_.dtype)
+            else:
+                randMat = ncp.random.normal(scale=vcp.range, size=input_.shape).astype(input_.dtype)
             randMat *= sigma_W
             input_ += randMat
             if clip_output:
@@ -184,7 +187,12 @@ def applyDriftModel(input_, T, drift_model, vcp, param_root, clip_output, mask):
         mu_v = ncp.maximum(-0.0045*G + 0.08,ncp.minimum(0.06,ncp.maximum(-0.00169*G+0.0825, 0.055)))
         sigma_v = 1/(8*G + 30.0320)
 
-        v = mu_v + ncp.random.normal(scale=sigma_v, size=input_.shape, dtype=input_.dtype)
+        # Apply random errors to the exponent v
+        if param_root.numeric_params.useGPU:
+            randMat_v = ncp.random.normal(scale=sigma_v, size=input_.shape, dtype=input_.dtype)
+        else:
+            randMat_v = ncp.random.normal(scale=sigma_v, size=input_.shape).astype(input_.dtype)
+        v = mu_v + randMat_v
 
         # Apply drift and program error according to the procedure in Eqs 12-16 of Supplementary Information
         T0 = 27.36
@@ -199,14 +207,22 @@ def applyDriftModel(input_, T, drift_model, vcp, param_root, clip_output, mask):
         sigma_G0 = ncp.maximum(A*(G**2) + B*G + C, 0)
 
         # Apply noise and drift at T0
-        G_T0 = G * pow(T0/20,-v) + ncp.random.normal(scale=sigma_G0, size=input_.shape, dtype=input_.dtype)
+        if param_root.numeric_params.useGPU:
+            randMat0 = ncp.random.normal(scale=sigma_G0, size=input_.shape, dtype=input_.dtype)
+        else:
+            randMat0 = ncp.random.normal(scale=sigma_G0, size=input_.shape).astype(input_.dtype)
+        G_T0 = G * pow(T0/20,-v) + randMat0
 
         # Programming noise at T1: fit to black curve in Fig. 16 of SI
         A, B, C, D = 1.904e-4, -7.290e-3, 1.004e-1, 1.923e-1
         sigma_G1 = ncp.maximum(A*(G**3) + B*(G**2) + C*G + D, 0)
 
         # Apply drift at T1
-        G_T1 = G_T0 * pow(T1/T0,-v) + ncp.random.normal(scale=sigma_G1, size=input_.shape, dtype=input_.dtype)
+        if param_root.numeric_params.useGPU:
+            randMat1 = ncp.random.normal(scale=sigma_G1, size=input_.shape, dtype=input_.dtype)
+        else:
+            randMat1 = ncp.random.normal(scale=sigma_G1, size=input_.shape).astype(input_.dtype)
+        G_T1 = G_T0 * pow(T1/T0,-v) + randMat1
 
         # Apply drift at T
         G_T = G_T1 * pow(T/T1,-v)

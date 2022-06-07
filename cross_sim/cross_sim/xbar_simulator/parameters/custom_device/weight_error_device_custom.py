@@ -138,7 +138,10 @@ def applyCustomProgrammingError(input_, error_model, vcp, param_root, clip_outpu
     #### Apply the programming errors to the weight matrix
 
     if sigma_W.any():
-        randMat = ncp.random.normal(scale=vcp.range, size=input_.shape, dtype=input_.dtype)
+        if param_root.numeric_params.useGPU:
+            randMat = ncp.random.normal(scale=vcp.range, size=input_.shape, dtype=input_.dtype)
+        else:
+            randMat = ncp.random.normal(scale=vcp.range, size=input_.shape).astype(input_.dtype)
         randMat *= sigma_W
         input_ += randMat
         if clip_output:
