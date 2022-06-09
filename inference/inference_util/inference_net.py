@@ -559,7 +559,10 @@ def inference(ntest,dataset,paramsList,sizes,keras_model,layerParams,**kwargs):
         if ntest_batch > ntest:
             ntest_batch = ntest
         nloads = (ntest-1) // ntest_batch + 1
-        frac_accum = np.zeros(2)
+        if type(topk) is int:
+            frac_accum = 0
+        else:
+            frac_accum = np.zeros(len(topk))
     else:
         print('Loading dataset')
         ntest_batch = ntest
@@ -669,7 +672,7 @@ def inference(ntest,dataset,paramsList,sizes,keras_model,layerParams,**kwargs):
         print("===========================")
         frac = frac_accum / nloads
         if type(topk) is int:
-            print("Total inference accuracy: %g" % frac)
+            print("Total inference accuracy: {:.2f}".format(100*frac)+"%")
         else:
             accs = ""
             for j in range(len(topk)):
