@@ -6,7 +6,7 @@ CrossSim can model device and circuit non-idealities such as arbitrary programmi
 
 For neural network training accelerators, CrossSim can generate lookup tables of device behavior from experimental data. These lookup tables can realistically simulate the accuracy impact of arbitrarily complex conductance update characteristics, including write nonlinearity, write asymmetry, write stochasticity, and device-to-device variability.
 
-CrossSim does not explicitly model the energy, area, or speed of analog accelerators. A full description of CrossSim's parameters and modeling assumptions can be found in the [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual.pdf).
+CrossSim does not explicitly model the energy, area, or speed of analog accelerators. A full description of CrossSim's parameters and modeling assumptions can be found in the [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual_v2.0.pdf).
 
 ## Requirements
 CrossSim has been tested on Ubuntu 18.04, and Windows 10 using Python 3.7.6.
@@ -41,12 +41,12 @@ This command downloads about 1.2GB of data for the two repositories (combined), 
 cd inference
 python run_inference.py
 ```
-This will run a CrossSim Inference simulation using a simple CNN and the MNIST dataset by default. The use of the run_inference.py script is explained in more detail in Chapter 3 of the [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual.pdf).
+This will run a CrossSim Inference simulation using a simple CNN and the MNIST dataset by default. The use of the run_inference.py script is explained in more detail in Chapter 3 of the [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual_v2.0.pdf).
 
-Due to file size and copyright, this distribution does not include the ImageNet dataset. Section 4.3 of the [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual.pdf) explains how to add your own copy of the ImageNet test set to CrossSim.
+Due to file size and copyright, this distribution does not include the ImageNet dataset. Section 4.3 of the [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual_v2.0.pdf) explains how to add your own copy of the ImageNet test set to CrossSim.
 
 ## Using CrossSim
-CrossSim is primarily focused on neural network inference. Example scripts to perform inference are in the ``inference`` directory and described in Chapter 3 of the [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual.pdf). If you are interested in benchmarking large neural networks, a CUDA-capable GPU is recommended.
+CrossSim is primarily focused on neural network inference. Example scripts to perform inference are in the ``inference`` directory and described in Chapter 3 of the [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual_v2.0.pdf). If you are interested in benchmarking large neural networks, a CUDA-capable GPU is recommended.
 
 If you would like to use the CrossSim array models for other analog MVM applications, the hardware models are located in the ``cross_sim/cross_sim/xbar_simulator`` directory of the repository.
 
@@ -55,7 +55,7 @@ Methods for applying device-specific models for programming errors, cycle-to-cyc
 ```
 /cross_sim/cross_sim/xbar_simulator/parameters/custom_device/
 ```
-To implement a new device model for use in inference simulations, a new device model can be added as an option in these files. Please see Chapters 7.2-7.4 of the [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual.pdf) for more details.
+To implement a new device model for use in inference simulations, a new device model can be added as an option in these files. Please see Chapters 7.2-7.4 of the [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual_v2.0.pdf) for more details.
 
 ## Adding New Neural Network Models, Datasets, and Device Lookup Tables
 To use your own pretrained models and datasets for use with CrossSim Inference, or your own device experimental data for use with CrossSim Training, modify the url field in the .gitmodules folder. If you have no yet initialized the submodules, use the commands above. To change the submodule url after the submodules have been initialized, use the following commands:
@@ -63,7 +63,7 @@ To use your own pretrained models and datasets for use with CrossSim Inference, 
 git submodule sync
 git submodule update --init --remote
 ```
-Instructions for adding new neural network models and devices into CrossSim for use during inference can be found in Chapters 5 and 7 of [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual.pdf) respectively.
+Instructions for adding new neural network models and devices into CrossSim for use during inference can be found in Chapters 5 and 7 of [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual_v2.0.pdf) respectively.
 
 If you would like to contribute your device data or models, create a pull request against this repository and the [data](https://github.com/sandialabs/cross-sim-data) or [pre-trained models](https://github.com/sandialabs/cross-sim-models) repositories.
 
@@ -72,9 +72,8 @@ If you use CrossSim for research please cite:
 ```
 @article{crossim,
   author={T. Patrick Xiao, Christopher H. Bennett, Ben Feinberg, Matthew J. Marinella, Sapan Agarwal},
-  title={CrossSim 2.0 Inference Manual},
-  doi = {10.2172/1869509},
-  url = {https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual.pdf},
+  title={CrossSim: accuracy simulation of analog in-memory computing},
+  url = {https://github.com/sandialabs/cross-sim},
 }
 ```
 
