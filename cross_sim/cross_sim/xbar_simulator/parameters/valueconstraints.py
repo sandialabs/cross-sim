@@ -148,9 +148,6 @@ class NormalError(ParametersBase):
         x_par = self.param_root.numeric_params.x_par
         y_par = self.param_root.numeric_params.y_par
         Nex_par = self.param_root.numeric_params.Nex_par
-        if x_par > 1 and y_par > 1 and Nex_par > 1:
-            raise ValueError("Not yet supported: x_par, y_par, Nex_par > 1")
-
         batched = input_.ndim >= 2 and (x_par > 1 or y_par > 1 or Nex_par > 1)
 
         # For depthwise convolution, there is a block diagonal matrix within another block diagonal matrix
@@ -164,46 +161,22 @@ class NormalError(ParametersBase):
             else:
                 Nrows = Kx*Ky
 
-        # Random value pre-generation
-        # 1) On first call to this function, generate a large matrix of random values equal to the size of
-        #   the full batch matrix
-        # 2) On subsequent calls, alternately shuffle the rows and columns of this matrix to generate a new
-        #   random matrix for the simulation
-        if self.param_root.numeric_params.read_noise.pregenRandom and batched:
-            pregenShape = input_.shape
-            if is_depthwise:
-                pregenShape[1] = Nrows
-
-            if self.randMat_pregen is None:
-                if self.param_root.numeric_params.useGPU:
-                    self.randMat_pregen = ncp.random.normal(scale=sigma, size=pregenShape, dtype=input_.dtype)
-                else:
-                    self.randMat_pregen = ncp.random.normal(scale=sigma, size=pregenShape).astype(input_.dtype)
-
-            else:
-                if self.rowShuffle:
-                    self.randMat_pregen = self.randMat_pregen[np.random.permutation(pregenShape[0]),:]
-                    self.rowShuffle = False
-                else:
-                    self.randMat_pregen = self.randMat_pregen[:,np.random.permutation(pregenShape[1])]
-                    self.rowShuffle = True
+        if x_par > 1 and y_par > 1 and Nex_par > 1 and is_depthwise:
+            raise ValueError("Not yet supported: depthwise convolution + read noise + SW packing + parasitic resistance. For this neural network,"+\
+                " please set x_par, y_par = (1, 1) in get_xy_parallel_parasitics().")
 
         # For all cases that are not a depthwise convolution, the process is simple regardless of whether
         # sliding windows are batched
         if not is_depthwise:
-            if not (self.param_root.numeric_params.read_noise.pregenRandom and batched):
-
-                if self.param_root.numeric_params.useGPU:
-                    Rall = ncp.random.normal(scale=1, size=input_.shape, dtype=input_.dtype)
-                else:
-                    Rall = rng.standard_normal(size=input_.shape, dtype=input_.dtype)
-
-                if noise_model == "alpha":
-                    Rall *= sigma
-                else:
-                    Rall *= std_matrix 
+            if self.param_root.numeric_params.useGPU:
+                Rall = ncp.random.normal(scale=1, size=input_.shape, dtype=input_.dtype)
             else:
-                Rall = self.randMat_pregen
+                Rall = rng.standard_normal(size=input_.shape, dtype=input_.dtype)
+
+            if noise_model == "alpha":
+                Rall *= sigma
+            else:
+                Rall *= std_matrix 
 
             if self.proportional and noise_model == "alpha":
                 Rall += 1
@@ -212,18 +185,15 @@ class NormalError(ParametersBase):
                 input_ += Rall
 
         else:
-            if not self.param_root.numeric_params.read_noise.pregenRandom:
-                if self.param_root.numeric_params.useGPU:
-                    Rmat = ncp.random.normal(scale=1, size=(input_.shape[0],Nrows), dtype=input_.dtype)
-                else:
-                    Rmat = rng.standard_normal(size=(input_.shape[0],Nrows), dtype=input_.dtype)
-
-                if noise_model == "alpha":
-                    Rmat *= sigma
-                else:
-                    Rmat *= std_matrix 
+            if self.param_root.numeric_params.useGPU:
+                Rmat = ncp.random.normal(scale=1, size=(input_.shape[0],Nrows), dtype=input_.dtype)
             else:
-                Rmat = self.randMat_pregen
+                Rmat = rng.standard_normal(size=(input_.shape[0],Nrows), dtype=input_.dtype)
+
+            if noise_model == "alpha":
+                Rmat *= sigma
+            else:
+                Rmat *= std_matrix 
 
             if not batched:
                 for ch in range(Nch):
@@ -534,6 +504,3 @@ class WrapperParams(ParametersBase):
         attributes['col_output']=ClipConstraints(param_root,minimum=None,maximum=None)
 
         ParametersBase.__init__(self,param_root, **attributes)
-
-
-

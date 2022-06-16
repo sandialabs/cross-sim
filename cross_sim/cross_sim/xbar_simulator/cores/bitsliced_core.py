@@ -51,7 +51,7 @@ class BitslicedCore(WrapperCore):
             self.core_slices = [ [clipper_core_factory(),clipper_core_factory()] for i in range(Nslices)]
 
             self.fast_balanced = params.xbar_params.fast_balanced
-            if self.fast_balanced and self.params.numeric_params.read_noise.sigma > 0:
+            if self.fast_balanced and self.params.numeric_params.read_noise.sigma > 0 and self.params.weight_error_params.noise_model != "none":
                 print("Fast balanced core option cannot be used with read noise: reverting.")
                 self.fast_balanced = False
             if self.fast_balanced and self.params.numeric_params.Rp > 0:

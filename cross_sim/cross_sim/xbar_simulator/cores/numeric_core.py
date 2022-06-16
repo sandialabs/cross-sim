@@ -382,7 +382,7 @@ class NumericCore(ClipperCore):
         matrix_neg : negative weight matrix
         """
         # For efficiency, this code assumes no select device and no row parasitics
-        if not self.params.numeric_params.noRowParasitics or self.params.numeric_params.Vselect > 0:
+        if not self.params.numeric_params.circuit.noRowParasitics or self.params.numeric_params.circuit.Vselect > 0:
             raise ValueError("Interleaved parasitics option requires no row parasitics and Vselect = 0")
 
         # Parasitic resistance
@@ -801,18 +801,15 @@ class NumericCore(ClipperCore):
 
         Ncopy = self.params.numeric_params.x_par * self.params.numeric_params.y_par
         
-        # SIMD and parasitic resistance
         # If doing a circuit simulation, must keep the full sized (sparse) matrix
         # Nex_par > 1 only if Rp > 0
         if self.params.numeric_params.Nex_par > 1:
             noisy_matrix = self._apply_read_noise(self.matrix)
+            noisy_matrix *= self.par_mask
 
-        # SIMD and no parasitic resistance
+        # No parasitic resistance
         else:
             if Ncopy > 1:
-                # This is slower for some reason
-                # self.matrix[self.indices] = self._apply_read_noise(self.matrix_dense)
-
                 noisy_matrix = self._apply_read_noise(self.matrix_dense)
                 Nx, Ny = self.matrix_temp.shape
                 for m in range(Ncopy):
