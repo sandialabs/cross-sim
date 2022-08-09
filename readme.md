@@ -70,7 +70,7 @@ If you would like to contribute your device data or models, create a pull reques
 ## Citing CrossSim
 If you use CrossSim for research please cite:
 ```
-@article{crossim,
+@article{CrossSim,
   author={T. Patrick Xiao, Christopher H. Bennett, Ben Feinberg, Matthew J. Marinella, Sapan Agarwal},
   title={CrossSim: accuracy simulation of analog in-memory computing},
   url = {https://github.com/sandialabs/cross-sim},
