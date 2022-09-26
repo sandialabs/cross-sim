@@ -71,7 +71,7 @@ If you would like to contribute your device data or models, create a pull reques
 If you use CrossSim for research please cite:
 ```
 @article{CrossSim,
-  author={T. Patrick Xiao, Christopher H. Bennett, Ben Feinberg, Matthew J. Marinella, Sapan Agarwal},
+  author={T. Patrick Xiao and Christopher H. Bennett and Ben Feinberg and Matthew J. Marinella and Sapan Agarwal},
   title={CrossSim: accuracy simulation of analog in-memory computing},
   url = {https://github.com/sandialabs/cross-sim},
 }
