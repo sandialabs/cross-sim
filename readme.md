@@ -1,23 +1,27 @@
 # CrossSim
 
-CrossSim is a GPU-accelerated, Python-based crossbar simulator designed to model analog in-memory computing for neural networks and linear algebra applications. It is an accuracy simulator and co-design tool that was developed to address how analog hardware effects in resistive crossbars impact the quality of the algorithm solution. CrossSim provides a special interface to model analog accelerators for neural network inference and training, and also has an API that allows different algorithms to be built on resistive memory array building blocks.
+### Version 3.0
 
-CrossSim can model device and circuit non-idealities such as arbitrary programming errors, conductance drift, cycle-to-cycle read noise, and precision loss in analog-to-digital conversion (ADC). It also uses a fast, internal circuit simulator to model the effect of parasitic metal resistances on accuracy. For neural network inference, it can simulate accelerators with significant parameterizability at the system architecture level and can be used to explore how design choices such as weight bit slicing, negative number representation scheme, ADC ranges, and array size affect the sensitivity to these analog errors. CrossSim can be accelerated on CUDA GPUs, and inference simulations have been run on large-scale deep neural networks such as ResNet50 on ImageNet.
+CrossSim is a GPU-accelerated, Python-based crossbar simulator designed to model analog in-memory computing for any application that relies on matrix operations: neural networks, signal processing, solving linear systems, and many more. It is an accuracy simulator and co-design tool that was developed to address how analog hardware effects in resistive crossbars impact the quality of the algorithm solution.
 
-For neural network training accelerators, CrossSim can generate lookup tables of device behavior from experimental data. These lookup tables can realistically simulate the accuracy impact of arbitrarily complex conductance update characteristics, including write nonlinearity, write asymmetry, write stochasticity, and device-to-device variability.
+CrossSim has a Numpy-like API that allows different algorithms to be built on resitive memory array building blocks. CrossSim cores can be used as drop-in replacements for Numpy in application code to emulate deployment on analog hardware. It also has a special interface to model analog accelerators for neural network inference.
 
-CrossSim does not explicitly model the energy, area, or speed of analog accelerators. A full description of CrossSim's parameters and modeling assumptions can be found in the [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual_v2.0.pdf).
+CrossSim can model device and circuit non-idealities such as arbitrary programming errors, conductance drift, cycle-to-cycle read noise, and precision loss in analog-to-digital conversion (ADC). It also uses a fast, internal circuit simulator to model the effect of parasitic metal resistances on accuracy. For neural network inference, it can simulate accelerators with significant parameterizability at the system architecture level and can be used to explore how design choices such as weight bit slicing, negative number representation scheme, ADC ranges, and array size affect the sensitivity to these analog errors. CrossSim can be accelerated on CUDA GPUs, and inference simulations have been run on large-scale, industry-standard deep neural networks such as ResNet50 on ImageNet. CrossSim's simulation speed on ResNet50 is within ~3X of TensorFlow-Keras using baseline (simplest) analog hardware simulation settings.
+
+For neural network training accelerators, CrossSim can generate lookup tables of device behavior from experimental data. These lookup tables can realistically simulate the accuracy impact of arbitrarily complex conductance update characteristics, including write nonlinearity, write asymmetry, write stochasticity, and device-to-device variability. __To simulate neural network training, please use CrossSim Version 2.0. Support for neural network training will be brought back in a future software update.__
+
+CrossSim does not explicitly model the energy, area, or speed of analog accelerators. 
 
 ## Requirements
-CrossSim has been tested on Ubuntu 18.04, and Windows 10 using Python 3.7.6.
+CrossSim has been tested on Ubuntu 18.04, and Windows 10 using Python 3.10.8.
 
 CrossSim requires the following Python packages:
-* TensorFlow 2.4.1 (includes Keras 2.4.0)
-* Numpy 1.20.3
-* SciPy 1.7.1
-* Pandas 1.3.3
-* MatPlotLib 3.4.3
-* CuPy 8.3.0 with CUDA 10.2, or Cupy 10.3.1 with CUDA 11.2 (if GPU acceleration is enabled)
+* Numpy 1.24.3
+* SciPy 1.11.1
+* TensorFlow 2.13.0 (for DNN inference)
+* IPython 8.8.0 (for tutorials)
+* MatPlotLib 3.7.2 (for tutorials and application examples)
+* CuPy 8.3.0 with CUDA 10.2, or Cupy 12.1.0 with CUDA 11.1 (for GPU acceleration)
 
 Several of the neural network models provided with CrossSim may require additional packages.
 ImageNet models may require:
@@ -29,7 +33,12 @@ Inference simulation of Larq quantized models requires:
 
 CrossSim has been tested with the version numbers above, but other versions may work as well.
 
-## Getting Started
+## Tutorial
+
+After installing CrossSim and its dependencies, get started by checking out the CrossSim [interactive tutorial](https://github.com/sandialabs/cross-sim/tree/main/tutorial) which shows off many of the new features in Version 3.0. The tutorial walks through how to use CrossSim's Numpy-like cores to drop it easily into application code. It also contains examples of how to model different physical effects, how to use different data mapping schemes, and how to define fully customizable physical device models.
+
+## Neural network inference
+
 CrossSim uses git submodules to distribute [neural network datasets and device lookup tables for training](https://github.com/sandialabs/cross-sim-data), and [neural network models](https://github.com/sandialabs/cross-sim-models). After cloning this repository, the following commands will fetch the submodules.
 ```
 git submodule init
@@ -38,26 +47,30 @@ git submodule update --progress
 
 This command downloads about 1.2GB of data for the two repositories (combined), which is then de-compressed. After cloning the submodules, you can test CrossSim Inference by running the following commands:
 ```
-cd inference
+cd applications/dnn/inference
 python run_inference.py
 ```
-This will run a CrossSim Inference simulation using a simple CNN and the MNIST dataset by default. The use of the run_inference.py script is explained in more detail in Chapter 3 of the [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual_v2.0.pdf).
+This will run a CrossSim Inference simulation using a simple CNN and the MNIST dataset by default. The use of the run_inference.py script is explained in more detail in Chapter 3 of the [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual_v2.0.pdf). Example scripts to perform inference are in the ``inference`` directory and described in the same chapter of the manual. If you are interested in benchmarking large neural networks, a CUDA-capable GPU is recommended.
 
 Due to file size and copyright, this distribution does not include the ImageNet dataset. Section 4.3 of the [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual_v2.0.pdf) explains how to add your own copy of the ImageNet test set to CrossSim.
 
-## Using CrossSim
-CrossSim is primarily focused on neural network inference. Example scripts to perform inference are in the ``inference`` directory and described in Chapter 3 of the [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual_v2.0.pdf). If you are interested in benchmarking large neural networks, a CUDA-capable GPU is recommended.
 
-If you would like to use the CrossSim array models for other analog MVM applications, the hardware models are located in the ``cross_sim/cross_sim/xbar_simulator`` directory of the repository.
-
-## Adding New Device Models for Inference
-Methods for applying device-specific models for programming errors, cycle-to-cycle read noise, and conductance drift are found in the corresponding files located inside the following directory:
+## Adding new device models
+Users can add their own custom models for their resistive devices. Any device conductance errors that can be implemented as a Python function (including look-up tables) can be called as part of a CrossSim simulation. Custom device models can be added to the following directory, which contains several examples:
 ```
-/cross_sim/cross_sim/xbar_simulator/parameters/custom_device/
+/simulator/devices/custom
 ```
-To implement a new device model for use in inference simulations, a new device model can be added as an option in these files. Please see Chapters 7.2-7.4 of the [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual_v2.0.pdf) for more details.
+See Part 3 of the [tutorial](https://github.com/sandialabs/cross-sim/tree/main/tutorial) as well as the ``simulator/devices`` page for a guide on how to do this.
 
-## Adding New Neural Network Models, Datasets, and Device Lookup Tables
+
+## Adding new ADC models
+Users can also add their own custom models for ADCs, by creating a compact model of the circuit that can be implemented as Python function (including look-up tables). Users can add their ADC models to the following directory, which contains several examples:
+```
+/simulator/circuits/adc
+```
+See the ``simulator/circuits/adc`` page for details on how to do this.
+
+## Adding new neural network models, datasets, and device lookup tables
 To use your own pretrained models and datasets for use with CrossSim Inference, or your own device experimental data for use with CrossSim Training, modify the url field in the .gitmodules folder. If you have no yet initialized the submodules, use the commands above. To change the submodule url after the submodules have been initialized, use the following commands:
 ```
 git submodule sync
@@ -69,7 +82,7 @@ If you would like to contribute your device data or models, create a pull reques
 
 ## Citing CrossSim
 If you use CrossSim for research please cite:
-```
+```text
 @article{CrossSim,
   author={T. Patrick Xiao and Christopher H. Bennett and Ben Feinberg and Matthew J. Marinella and Sapan Agarwal},
   title={CrossSim: accuracy simulation of analog in-memory computing},
@@ -77,5 +90,43 @@ If you use CrossSim for research please cite:
 }
 ```
 
-## Contact Us
+## Developing CrossSim
+
+When developing for CrossSim, different developer tools are used to improve code quality
+
+### Linting
+We use `ruff` to lint our code.
+```
+ruff check simulator/
+```
+
+### Type checking
+We use `mypy`.
+```
+mypy simulator/
+```
+
+### Formatting
+We use `black`.
+```
+black simulator/
+```
+
+### Documentation
+We use `sphinx`.
+```
+sphinx-build -b html docs/sphinx/source/ docs/sphinx/build/
+```
+If a new module is added, it can be added to the docs using
+```
+sphinx-apidoc simulator/ -o docs/sphinx/source/
+```
+
+### Tests
+We use `pytest` and `hypothesis`.
+```
+pytest
+```
+
+## Contact us
 For questions, feature requests, bug reports, or suggestions, please submit a new issue through GitHub. The team will get back to you as soon as we can.
