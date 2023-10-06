@@ -66,6 +66,7 @@ def set_params(**kwargs):
 
     balanced_style = kwargs.get("balanced_style","ONE_SIDED")
     input_bitslicing = kwargs.get("input_bitslicing",False)
+    input_slice_size = kwargs.get("input_slice_size",1)
     ADC_per_ibit = kwargs.get("ADC_per_ibit",False)
     disable_parasitics_slices = kwargs.get("disable_parasitics_slices",None)
 
@@ -199,6 +200,7 @@ def set_params(**kwargs):
     params.core.mapping.inputs.mvm.max = float(input_range[1])
     if input_bits > 0:
         params.xbar.dac.mvm.input_bitslicing = input_bitslicing
+        params.xbar.dac.mvm.slice_size = input_slice_size
         if not positiveInputsOnly:        
             if input_bitslicing or params.xbar.dac.mvm.model == "SignMagnitudeDAC":
                 max_input_range = float(np.max(np.abs(input_range)))
