@@ -1,0 +1,32 @@
+@@ -21,6 +21,7 @@ based on the input data types and specified parameters.
+ 
+ import numpy as np
+ from warnings import warn
++from array import array
+ from ..parameters import CrossSimParameters
+ 
+ from . import BalancedCore, OffsetCore, BitslicedCore, NumericCore
+@@ -811,6 +812,23 @@ class AnalogCore:
+     def __array__(self):
+         return self.get_matrix()
+ 
++    # Overloading "*" purely for Matlab compatibility. If this installation will
++    # support both Python and Matlab these may quietly enable unintended behavior
++    # The operator is intentionally defined to implement matrix multiplication for
++    # array.array or memoryview inputs (what Matlab uses) to limit the potential
++    # downsides effects of these changes but it is best practice to avoid this operator
++    # overloading except for pure Matlab installations. If CrossSim is installed at the
++    # system level with this enabled, consider using a venv without this enabled.
++    def __mul__(self, other):
++        if type(other) in [array, memoryview]:
++            return self.dot(other)
++        else:
++            return self.__array__() * other
++
++    def __rmul__(self, other):
++        if type(other) in [array, memoryview]:
++            return self.rdot(other)
++
+ class TransposedCore(AnalogCore):
+     def __init__(self, parent):
+         self.parent = parent

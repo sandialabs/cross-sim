@@ -1,0 +1,149 @@
+{
+    "core": {
+        "style": 1,
+        "rows_max": 1024,
+        "cols_max": 1024,
+        "weight_bits": 0,
+        "complex_matrix": false,
+        "complex_input": false,
+        "balanced": {
+            "style": 1,
+            "interleaved_posneg": false,
+            "subtract_current_in_xbar": true
+        },
+        "bit_sliced": {
+            "style": 1,
+            "num_slices": 2
+        },
+        "offset": {
+            "style": 1
+        },
+        "mapping": {
+            "weights": {
+                "clipping": true,
+                "min": null,
+                "max": null,
+                "percentile": 1.0,
+                "row_partition_priority": [],
+                "col_partition_priority": [],
+                "row_partition_strategy": 2,
+                "col_partition_strategy": 2
+            },
+            "inputs": {
+                "_match": true,
+                "mvm": {
+                    "clipping": false,
+                    "min": -1.0,
+                    "max": 1.0,
+                    "percentile": null
+                },
+                "vmm": {
+                    "clipping": false,
+                    "min": -1.0,
+                    "max": 1.0,
+                    "percentile": null
+                }
+            }
+        }
+    },
+    "simulation": {
+        "convolution": {
+            "is_conv_core": false,
+            "stride": 1,
+            "Kx": 3,
+            "Ky": 3,
+            "Noc": 1,
+            "Nic": 1,
+            "x_par": 1,
+            "y_par": 1,
+            "weight_reorder": false,
+            "conv_matmul": false,
+            "bias_row": false,
+            "Nwindows": 1
+        },
+        "analytics": {
+            "profile_adc_inputs": false,
+            "ntest": 0
+        },
+        "useGPU": false,
+        "gpu_id": 0,
+        "Niters_max_parasitics": 100,
+        "Verr_th_mvm": 0.001,
+        "relaxation_gamma": 1,
+        "disable_fast_balanced": false,
+        "disable_fast_matmul": false,
+        "hide_convergence_msg": false
+    },
+    "xbar": {
+        "device": {
+            "cell_bits": 0,
+            "Rmin": 1000,
+            "Rmax": 10000,
+            "time": 0,
+            "infinite_on_off_ratio": false,
+            "clip_conductance": false,
+            "read_noise": {
+                "enable": false,
+                "model": "IdealDevice",
+                "magnitude": 0
+            },
+            "programming_error": {
+                "enable": false,
+                "model": "IdealDevice",
+                "magnitude": 0
+            },
+            "drift_error": {
+                "enable": false,
+                "model": "IdealDevice",
+                "magnitude": 0
+            }
+        },
+        "array": {
+            "Icol_max": 0,
+            "parasitics": {
+                "enable": false,
+                "Rp_row": 0,
+                "Rp_col": 0,
+                "gate_input": false
+            }
+        },
+        "adc": {
+            "_match": true,
+            "mvm": {
+                "model": "IdealADC",
+                "bits": 0,
+                "signed": true,
+                "stochastic_rounding": false,
+                "adc_per_ibit": false,
+                "calibrated_range": null,
+                "adc_range_option": 1
+            },
+            "vmm": {
+                "model": "IdealADC",
+                "bits": 0,
+                "signed": true,
+                "stochastic_rounding": false,
+                "adc_per_ibit": false,
+                "calibrated_range": null,
+                "adc_range_option": 1
+            }
+        },
+        "dac": {
+            "_match": true,
+            "mvm": {
+                "model": "IdealDAC",
+                "bits": 0,
+                "input_bitslicing": false,
+                "signed": true,
+                "slice_size": 1
+            },
+            "vmm": {
+                "model": "IdealDAC",
+                "bits": 0,
+                "input_bitslicing": false,
+                "signed": true,
+                "slice_size": 1
+            }
+        }
+    }
+}

@@ -1,0 +1,163 @@
+{
+    "core": {
+        "style": 1,
+        "rows_max": 1152,
+        "cols_max": 256,
+        "weight_bits": 8,
+        "complex_matrix": false,
+        "complex_input": false,
+        "balanced": {
+            "style": 1,
+            "interleaved_posneg": false,
+            "subtract_current_in_xbar": true
+        },
+        "bit_sliced": {
+            "style": 1,
+            "num_slices": 2
+        },
+        "offset": {
+            "style": 1
+        },
+        "mapping": {
+            "weights": {
+                "clipping": true,
+                "min": null,
+                "max": null,
+                "percentile": 1.0,
+                "row_partition_priority": [],
+                "col_partition_priority": [],
+                "row_partition_strategy": 2,
+                "col_partition_strategy": 2
+            },
+            "inputs": {
+                "_match": true,
+                "mvm": {
+                    "clipping": false,
+                    "min": -152.0,
+                    "max": 152.0,
+                    "percentile": null
+                },
+                "vmm": {
+                    "clipping": false,
+                    "min": -152.0,
+                    "max": 152.0,
+                    "percentile": null
+                }
+            }
+        }
+    },
+    "simulation": {
+        "convolution": {
+            "is_conv_core": true,
+            "stride": 2,
+            "Kx": 7,
+            "Ky": 7,
+            "Noc": 64,
+            "Nic": 3,
+            "x_par": 1,
+            "y_par": 1,
+            "weight_reorder": false,
+            "conv_matmul": true,
+            "bias_row": false,
+            "Nwindows": 1
+        },
+        "analytics": {
+            "profile_adc_inputs": false,
+            "ntest": 0
+        },
+        "useGPU": false,
+        "gpu_id": 0,
+        "Niters_max_parasitics": 100,
+        "Verr_th_mvm": 0.001,
+        "relaxation_gamma": 1,
+        "disable_fast_balanced": false,
+        "disable_fast_matmul": false,
+        "hide_convergence_msg": false
+    },
+    "xbar": {
+        "device": {
+            "cell_bits": 7,
+            "Rmin": 35000.0,
+            "Rmax": 6000000000000.0,
+            "time": 0,
+            "infinite_on_off_ratio": false,
+            "clip_conductance": false,
+            "read_noise": {
+                "enable": false,
+                "model": "IdealDevice",
+                "magnitude": 0
+            },
+            "programming_error": {
+                "enable": true,
+                "model": "SONOS",
+                "magnitude": 0
+            },
+            "drift_error": {
+                "enable": true,
+                "model": "SONOS",
+                "magnitude": 0
+            }
+        },
+        "array": {
+            "Icol_max": 0,
+            "parasitics": {
+                "enable": false,
+                "Rp_row": 0,
+                "Rp_col": 0,
+                "gate_input": false
+            }
+        },
+        "adc": {
+            "_match": true,
+            "mvm": {
+                "model": "RampADC",
+                "bits": 8,
+                "signed": true,
+                "stochastic_rounding": false,
+                "adc_per_ibit": false,
+                "calibrated_range": [
+                    -2.9185207451767736,
+                    4.271561324751555
+                ],
+                "adc_range_option": 1,
+                "gain_db": 100,
+                "sigma_capacitor": 0.0,
+                "sigma_comparator": 0.0,
+                "symmetric_cdac": true
+            },
+            "vmm": {
+                "model": "RampADC",
+                "bits": 8,
+                "signed": true,
+                "stochastic_rounding": false,
+                "adc_per_ibit": false,
+                "calibrated_range": [
+                    -2.9185207451767736,
+                    4.271561324751555
+                ],
+                "adc_range_option": 1,
+                "gain_db": 100,
+                "sigma_capacitor": 0.0,
+                "sigma_comparator": 0.0,
+                "symmetric_cdac": true
+            }
+        },
+        "dac": {
+            "_match": true,
+            "mvm": {
+                "model": "SignMagnitudeDAC",
+                "bits": 8,
+                "input_bitslicing": true,
+                "signed": true,
+                "slice_size": 1
+            },
+            "vmm": {
+                "model": "SignMagnitudeDAC",
+                "bits": 8,
+                "input_bitslicing": true,
+                "signed": true,
+                "slice_size": 1
+            }
+        }
+    }
+}
