@@ -62,7 +62,7 @@ class WrapperCore(ICore, metaclass=ABCMeta):
                 self.vmm_in_scale * self.scale_wtmodel
             )
 
-        if not self.vmm_input_percentile_scaling:
+        if not self.mvm_input_percentile_scaling:
             self.mvm_in_scale = (
                 self.mvm_in_prefactor / self.params.core.mapping.inputs.mvm.range
             )
@@ -98,7 +98,7 @@ class WrapperCore(ICore, metaclass=ABCMeta):
                 input_limits[1] - input_limits[0]
             )
             self.mvm_out_scale = self.out_prefactor / self.mvm_in_scale
-        elif input_limits and not self.input_percentile_scaling:
+        elif input_limits and not self.mvm_input_percentile_scaling:
             raise ValueError(
                 "set_mvm_inputs received no input limits with percentile_scaling",
             )
@@ -128,9 +128,9 @@ class WrapperCore(ICore, metaclass=ABCMeta):
 
     def _read_matrix(self):
         if self.params.simulation.useGPU:
-            return self._wrapper_read_matrix().get() * self.weight_scale
+            return self._wrapper_read_matrix().get()
         else:
-            return self._wrapper_read_matrix() * self.weight_scale
+            return self._wrapper_read_matrix()
 
     def _save_matrix(self):
         return self._wrapper__save_matrix()

@@ -1,6 +1,7 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017 National Technology & Engineering Solutions of Sandia, LLC
+# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government
+# retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
@@ -28,19 +29,19 @@ class SimulationParameters(BaseParameters):
         Niters_max_parasitics (int):  Max number of iterations for parasitic circuit
             solver (exceeding this causes model to conclude Rp is too high)
         Verr_th_mvm (float):  MVM/VMM error threshold for convergence in parasitic
-            circuit model. This is in normalized input units (-1 to 1), and is proportional
-            to input voltage.
+            circuit model. This is in normalized input units (-1 to 1), and is
+            proportional to input voltage.
         relaxation_gamma (float): Relaxation parameter for parasitic circuit solver.
             gamma < 1 implements successive under-relaxation.
             gamma > 1 implements successive over-relaxation.
         disable_fast_balanced (bool): fast_balanced implements MVM in BalancedCore or
-            BitSlicedCore rather than calling the method in NumericCore for speed. Will be
-            done  automatically if the params are compatible with fast_balanced, unless this
-            param is true
+            BitSlicedCore rather than calling the method in NumericCore for speed.
+            Will be done  automatically if the params are compatible with fast_balanced,
+            unless this param is true
         disable_fast_matmul (bool): fast_matmul uses matrix multiplies instead of
             MVMs when performing matmul (including convolution) operations. This is
-            faster and shouldn't impact accuracy. Will be done automatically if the params
-            are compatible with this method, unless this param is true
+            faster and shouldn't impact accuracy. Will be done automatically if the
+            params are compatible with this method, unless this param is true
         hide_convergence_msg (bool): Hide messages related to re-trials of circuit
             simulations with a reduced relaxation parameter
     """

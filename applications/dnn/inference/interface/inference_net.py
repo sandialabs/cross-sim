@@ -8,7 +8,8 @@
 import sys, io, os, time, random
 import numpy as np
 import tensorflow.keras.backend as K
-from simulator import DNN, CrossSimParameters
+from simulator import CrossSimParameters
+from simulator.algorithms import DNN
 from dataset_loaders import load_dataset_inference
 from helpers.qnn_adjustment import qnn_adjustment
 from simulator.parameters.core_parameters import CoreStyle, BitSlicedCoreStyle

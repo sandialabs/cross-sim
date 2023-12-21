@@ -43,8 +43,3 @@ from .balanced_core import BalancedCore
 from .bitsliced_core import BitslicedCore
 from .analog_core import AnalogCore
 from simulator.parameters import CrossSimParameters
-
-try:  # import if available / included in release
-    from .pc_core import PeriodicCarryCore
-except ImportError:
-    pass

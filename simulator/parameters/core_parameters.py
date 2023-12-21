@@ -1,6 +1,7 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017 National Technology & Engineering Solutions of Sandia, LLC
+# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government
+# retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
@@ -16,13 +17,14 @@ from .base_parameters import BasePairedParameters, BaseParameters
 class CoreStyle(IntEnum):
     """What style of core to use.
 
-    "BALANCED" : Represent each positive or negative matrix value using the conductance difference
-        of two devices
-    "BITSLICED" : Split the bits of resolution of each matrix value into multiple slices. Each bit
-        slice is represented by a balanced or offset cell
-    "OFFSET" : Represent each positive or negative matrix value using a single device whose conductance
-        is related to the value by an offset, which is later subtracted. Positive weights use
-        conductances above the offset, negative weights are below
+    "BALANCED" : Represent each positive or negative matrix value using the conductance
+     difference of two devices
+    "BITSLICED" : Split the bits of resolution of each matrix value into multiple
+        slices. Each bit slice is represented by a balanced or offset cell
+    "OFFSET" : Represent each positive or negative matrix value using a single device
+        whose conductance is related to the value by an offset, which is later
+        subtracted. Positive weights use conductances above the offset, negative
+        weights are below
     """
 
     BALANCED = 1
@@ -55,10 +57,12 @@ class BitSlicedCoreStyle(IntEnum):
 class OffsetCoreStyle(IntEnum):
     """How the offset to subtract in an OffsetCore or BitSlicedCore is computed.
 
-    "DIGITAL_OFFSET" : Offset is computed digitally and subtracted from digitized MVM output
-    "UNIT_COLUMN_SUBTRACTION" : A unit column (or zero-point column) is allocated inside the
-        memory array. The analog MVM result of this column is the offset. This is digitized
-        and subtracted from the digitized results of all other columns.
+    "DIGITAL_OFFSET" : Offset is computed digitally and subtracted from digitized
+        MVM output
+    "UNIT_COLUMN_SUBTRACTION" : A unit column (or zero-point column) is allocated
+        inside the memory array. The analog MVM result of this column is the offset.
+        This is digitized and subtracted from the digitized results of all other
+        columns.
     """
 
     DIGITAL_OFFSET = 1
@@ -111,9 +115,10 @@ class BalancedCoreParameters(BaseParameters):
 
     Args:
         style (BalancedCoreStyle): Style of the balanced core
-        interleaved_posneg (bool): Whether devices that implement the positive and negative
-            portions of the weight are interleaved on the same column (for MVM) or row (for VMM).
-            This option only makes a difference if parasitic resistance effects are simulated.
+        interleaved_posneg (bool): Whether devices that implement the positive and
+            negative portions of the weight are interleaved on the same column (for
+            MVM) or row (for VMM). This option only makes a difference if parasitic
+            resistance effects are simulated.
         subtract_current_in_xbar (bool): Whether to subtract current in the crossbar
     """
 
@@ -171,12 +176,14 @@ class MappingParameters(BaseParameters):
         if self.percentile is None:
             if self.max is None and self.min is None:
                 raise ValueError(
-                    "All MappingParameters are None, must set either percentile or min/max",
+                    "All MappingParameters are None, "
+                    "must set either percentile or min/max",
                 )
         else:
             if self.min is not None and self.max is not None:
                 raise ValueError(
-                    "All MappingParameters are set, either percentile or min/max must be None",
+                    "All MappingParameters are set, "
+                    "either percentile or min/max must be None",
                 )
             if self.max is not None or self.min is not None:
                 raise ValueError("min and max must be None for percentile mapping")
