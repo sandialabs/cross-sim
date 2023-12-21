@@ -239,7 +239,8 @@ class DNN:
                 useBias = False
 
             matrix = np.zeros(
-                (self.ncores[ilayer].nrow, self.ncores[ilayer].ncol), dtype=Wi.dtype,
+                (self.ncores[ilayer].nrow, self.ncores[ilayer].ncol),
+                dtype=Wi.dtype,
             )
 
             if self.ncore_style[ilayer] == "conv":
@@ -281,7 +282,10 @@ class DNN:
                 else:
                     for i in range(Noc):
                         matrix[i, (i * Kx * Ky) : ((i + 1) * Kx * Ky)] = Wi[
-                            :, :, i, 0,
+                            :,
+                            :,
+                            i,
+                            0,
                         ].flatten()
                     if useBias:
                         matrix[:, -1] = Wbias
@@ -404,7 +408,10 @@ class DNN:
                         if Ncores > 1:
                             print(
                                 "          partition ({:d}, {:d}): {:d} x {:d}".format(
-                                    j, i, core_m.NcolsVec[j], core_m.NrowsVec[i],
+                                    j,
+                                    i,
+                                    core_m.NcolsVec[j],
+                                    core_m.NrowsVec[i],
                                 ),
                             )
                         Ndevices_m += (
@@ -1098,7 +1105,8 @@ class DNN:
                                 np.log2((adc_max - Bmin) / (adc_max - adc_min)),
                             )
                             b_min = adc_max - (adc_max - adc_min) * pow(
-                                2, extend_bits_min,
+                                2,
+                                extend_bits_min,
                             )
                             extend_bits_max = np.ceil(
                                 np.log2((Bmax - b_min) / (adc_max - b_min)),

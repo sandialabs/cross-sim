@@ -1,6 +1,7 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017 National Technology & Engineering Solutions of Sandia, LLC
+# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government
+# retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
@@ -29,8 +30,8 @@ class BaseParameters:
 
     Attributes:
         parent (BaseParameters): Parent of this parameter in a nested parameter tree
-        parents (list[BaseParameters]): List of all parameters directly above the current parameter.
-            The first index of the list is the root parameter
+        parents (list[BaseParameters]): List of all parameters directly above the
+            current parameter. The first index of the list is the root parameter
         root (BaseParameters): Root of the parameter tree
     """
 
@@ -50,7 +51,9 @@ class BaseParameters:
         return param
 
     def __post_init__(self):
-        """Runs after default dataclass initialization to validate the state of the dataclass."""
+        """Runs after default dataclass initialization to validate the state of the
+        dataclass.
+        """
         self.validate()
 
     @property
@@ -58,20 +61,20 @@ class BaseParameters:
         """Returns the parent of the parameter in the parameter tree.
 
         Returns:
-            BaseParameters: Returns the Parameters object that holds this parameter object.
-                If parameter has no parent, self.parent returns itself.
+            BaseParameters: Returns the Parameters object that holds this parameter
+                object. If parameter has no parent, self.parent returns itself.
         """
         return self._parent
 
     @property
     def parents(self) -> list[BaseParameters]:
-        """Returns a list of parent of the parameters directly above the current parameter in the
-            parameter tree. The first index of the list is the root, the last parameter is the
-            current parameter.
+        """Returns a list of parent of the parameters directly above the current
+            parameter in the parameter tree. The first index of the list is the root,
+            the last parameter is the current parameter.
 
         Returns:
-            list[BaseParameters]: Returns the list of parameters above the current parameter in
-                the parameter tree.
+            list[BaseParameters]: Returns the list of parameters above the current
+                parameter in the parameter tree.
         """
         if self is self.root:
             return [self.root]
@@ -91,16 +94,22 @@ class BaseParameters:
 
     def validate(self) -> None:
         """Validates the parameters. Will warn if values do not match type hints.
-        Subclassed parameters may raise error if parameters provided unusable or inconsistent.
+        Subclassed parameters may raise error if parameters provided unusable or
+        inconsistent.
         """
         for key, value in self.__dataclass_fields__.items():
             # Handle some typing generics
-            # TODO: This could be more robust, but I'm not worrying about that as I'm not sure if we want this feature
+            # TODO: This could be more robust, but I'm not worrying about that as I'm
+            # not sure if we want this feature
             #       - This line behaves as follows
-            #       - list[int], etc. -> Checks if the object is an int. Does not check if the elements are ints
-            #       - Union[int, float], etc. -> This is not handled and it will cause an error
-            # If we want to keep this type checking we might want to just wrap this in a try/except
-            # This type validation could also probably be moved inside __setattr__ which would make it automatic
+            #       - list[int], etc. -> Checks if the object is an int. Does not check
+            #           if the elements are ints
+            #       - Union[int, float], etc. -> This is not handled and it will cause
+            #           an error
+            # If we want to keep this type checking we might want to just wrap this in a
+            #   try/except
+            # This type validation could also probably be moved inside __setattr__ which
+            #   would make it automatic
             value_type = _resolve_type(value.type, self.__module__)
             if not isinstance(getattr(self, key), value_type):
                 message = f"Key {key} must be of type '{value.type}', got {type(getattr(self, key))}"
@@ -137,7 +146,7 @@ class BaseParameters:
             self.__setattr__(key, value)
 
     def as_dict(self) -> dict[str, Any]:
-        """Return dataclass as a dictionary using the built in dataclasses.asdict function.
+        """Return dataclass as a dict using the built in dataclasses.asdict function.
 
         Returns:
             dict[str, Any]: Dictionary representation of the parameter
@@ -195,9 +204,10 @@ class BaseParameters:
         return repr(self)
 
     def __setattr__(self, name: str, value: Any) -> None:
-        """Sets an attribute to the dataclass. Behaves normally except when assigning to an Enum or Parameter.
-        If assigning to an Enum an attempt will be made to cast non-enum values to the appropriate Enum.
-        If assigning to Parameter, an attempt will be made to unpack the values to the appropriate Parameter.
+        """Sets an attribute to the dataclass. Behaves normally except when assigning to
+            an Enum or Parameter. If assigning to an Enum an attempt will be made to
+            cast non-enum values to the appropriate Enum. If assigning to Parameter, an
+            attempt will be made to unpack the values to the appropriate Parameter.
 
         Args:
             name (str): Name of attribute to set
@@ -215,6 +225,15 @@ class BaseParameters:
         if name in self.__dataclass_fields__:
             value_type = self.__dataclass_fields__[name].type
             value_type = _resolve_type(value_type, self.__module__)
+
+            # TODO: Super hacky fix for json load of ADCs of non-standard type.
+            # Remove in 3.1 with new param registry system.
+            if (
+                hasattr(value_type, "get_adc_type")
+                and isinstance(value, dict)
+                and "model" in value
+            ):
+                value_type = value_type.get_adc_type(value["model"])
             if issubclass(value_type, Enum):
                 # Syntax for getting by name of enum vs. value of enum is different
                 try:
@@ -227,8 +246,10 @@ class BaseParameters:
                     error_msg = f"Error setting parameter '{self.__class__.__name__}.{name}'. Valid values are: {', '.join(value_type._member_names_)}"
                     raise KeyError(error_msg) from e
             if is_dataclass(value_type) and not isinstance(value, value_type):
-                # NOTE: This does not automatically convert a list of type list[Parameter]
-                #       I don't think we have a use case for that and it seems overengineered
+                # NOTE: This does not automatically convert a list of type
+                #   list[Parameter]
+                #   I don't think we have a use case for that and it seems
+                #   overengineered
 
                 # If None given for dataclass, instantiate with default values
                 _implicitly_initialized = False
@@ -238,7 +259,8 @@ class BaseParameters:
                 try:
                     value = value_type(**value)
                 except TypeError as e:
-                    # This isn't necessary but it helps the user find where they incorrectly configured parameters
+                    # This isn't necessary but it helps the user find where they
+                    # incorrectly configured parameters
                     error_path = (
                         ".".join([param.__class__.__name__ for param in self.parents])
                         + f".{value_type.__name__}"
@@ -290,8 +312,8 @@ class BasePairedParameters(BaseParameters):
 
     @match.setter
     def match(self, value: bool) -> None:
-        """Sets the match attribute. When the attribute is changed the paired parameters will
-        sync/desync appropriately. When syncing, mvm takes precedence over vmm.
+        """Sets the match attribute. When the attribute is changed the paired parameters
+        will sync/desync appropriately. When syncing, mvm takes precedence over vmm.
         """
         self._match = value
         if self._match:
@@ -301,9 +323,9 @@ class BasePairedParameters(BaseParameters):
 
 
 def _resolve_type(value_type: Any, module_name) -> type:
-    """Returns the type of the corresponding type name from the module. This allows casting
-    to be done in the BaseParameter object without any extra boilerplate on any other
-    subclassed parameter object.
+    """Returns the type of the corresponding type name from the module. This allows
+        casting to be done in the BaseParameter object without any extra boilerplate on
+        any other subclassed parameter object.
 
     Because the value to be cast as could be subclassed anywhere else the type is not
     in the namespace on loading. This function uses the module of origin to retrieve

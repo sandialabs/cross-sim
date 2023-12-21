@@ -594,27 +594,41 @@ class BitslicedCore(WrapperCore):
     def _wrapper_read_matrix(self):
         Nslices = self.params.core.bit_sliced.num_slices
         Wbits_slice = self.Wbits_slice
+        Wbits = self.params.core.weight_bits
+        Wrange_xbar = self.params.xbar.device.Grange_norm
         if not self.balanced:
-            W = self.core_slices[0][0]._read_matrix()
+            W = (self.core_slices[0][0]._read_matrix() - self.Gmin_norm) / Wrange_xbar
         else:
             W = (
                 self.core_slices[0][0]._read_matrix()
                 - self.core_slices[0][1]._read_matrix()
-            )
+            ) / Wrange_xbar
 
         for i in range(1, Nslices):
             if not self.balanced:
-                W += pow(2, i * Wbits_slice) * self.core_slices[i][0]._read_matrix()
+                W += (
+                    pow(2, i * Wbits_slice)
+                    * (self.core_slices[i][0]._read_matrix() - self.Gmin_norm)
+                    / Wrange_xbar
+                )
             else:
-                W += pow(2, i * Wbits_slice) * (
-                    self.core_slices[i][0]._read_matrix()
-                    - self.core_slices[i][1]._read_matrix()
+                W += (
+                    pow(2, i * Wbits_slice)
+                    * (
+                        self.core_slices[i][0]._read_matrix()
+                        - self.core_slices[i][1]._read_matrix()
+                    )
+                    / Wrange_xbar
                 )
 
         W *= pow(2, Wbits_slice) - 1
         if not self.balanced:
             W -= self.Woffset
+            if not self.digital_offset:
+                W = W[1:, :]
         W /= self.Wmax
+        W /= (pow(2, Wbits - 1) - 1) / pow(2, Wbits - 1)
+        W *= 2 * self.max
         return W
 
     def _wrapper_save_matrix(self):

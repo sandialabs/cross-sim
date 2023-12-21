@@ -21,7 +21,16 @@ def init_GPU_util(useGPU):
 
 # Function for applying max and average pooling
 def apply_pool(
-    matrix, MPx, MPy, stride_MP, poolType, px_L, px_R, py_L, py_R, avgPool_round,
+    matrix,
+    MPx,
+    MPy,
+    stride_MP,
+    poolType,
+    px_L,
+    px_R,
+    py_L,
+    py_R,
+    avgPool_round,
 ):
     """Perform a max pool operation on a matrix, taking the max over MPx x MPy block with a given stride
     Assume the stride is equal to the kernel size

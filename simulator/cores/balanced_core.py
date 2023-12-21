@@ -78,14 +78,14 @@ class BalancedCore(WrapperCore):
                 Wmin_res = 0
 
             mat_pos = self.core_pos.params.xbar.device.Gmin_norm * (
-                matrix_norm < -Wmin_res
+                matrix_norm < Wmin_res
             ) + (
                 self.core_pos.params.xbar.device.Gmin_norm + Wrange_xbar * matrix_norm
             ) * (
                 matrix_norm >= Wmin_res
             )
             mat_neg = self.core_pos.params.xbar.device.Gmin_norm * (
-                matrix_norm >= Wmin_res
+                matrix_norm >= -Wmin_res
             ) + (
                 self.core_pos.params.xbar.device.Gmin_norm - Wrange_xbar * matrix_norm
             ) * (
@@ -351,7 +351,8 @@ class BalancedCore(WrapperCore):
             output = self.core_pos._read_matrix() - self.core_neg._read_matrix()
         else:
             output = self.W_balanced.copy()
-        output /= 2
+        output /= self.params.xbar.device.Grange_norm
+        output *= self.max
         return output
 
     def _wrapper_save_matrix(self):

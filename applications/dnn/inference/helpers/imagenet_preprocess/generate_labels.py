@@ -13,7 +13,7 @@ from imagenet_path import imagenet_val_path
 
 # Label array generation script from the ditsributed MAT file
 path_to_val_labels = './labels/ILSVRC2012_validation_ground_truth.txt'
-output_dir = "../../cross_sim/data/datasets/imagenet/"
+output_dir = "../../../data/datasets/imagenet/"
 
 meta = scipy.io.loadmat("./labels/meta.mat")
 original_idx_to_synset = {}

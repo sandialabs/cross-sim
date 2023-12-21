@@ -288,6 +288,7 @@ class OffsetCore(WrapperCore):
             output = output_shifted - offset
         else:
             output = (output - self.Gmin_norm) / self.Wrange_xbar - 0.5
+        output *= 2 * self.max
         return output
 
     def _wrapper_save_matrix(self):

@@ -12,7 +12,7 @@ from MLPerf_cal_images import get_cal_fns
 from imagenet_path import imagenet_val_path
 
 # Path to save preprocessed .npy arrays to
-output_dir = "../../cross_sim/data/datasets/imagenet/"
+output_dir = "../../../data/datasets/imagenet/"
 
 # Whether nor not preprocess images in the MLPerf calibration set
 MLperf_calibration = False

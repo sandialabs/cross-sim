@@ -1,6 +1,7 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017 National Technology & Engineering Solutions of Sandia, LLC
+# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government
+# retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
@@ -73,7 +74,8 @@ class DeviceParameters(BaseParameters):
         infinite_on_off_ratio (bool): Whether to assume infinite conductance
             On/Off ratio. If True, simulates the case of infinite Rmax.
         read_noise (WeightErrorParameters): Parameters for device read noise
-        programming_error (WeightErrorParameters): Parameters for device programming error
+        programming_error (WeightErrorParameters): Parameters for device
+            programming error
         drift_error (DriftErrorParameters):# Parameters for device conductance drift
 
     Returns:
@@ -105,7 +107,7 @@ class DeviceParameters(BaseParameters):
     def Gmin_norm(self) -> float:
         # Return the minimum programmable conductance of the device, normalized
         # by the maximum programmable conductance
-        gmin_norm = 0
+        gmin_norm = 0.0
         if not self.infinite_on_off_ratio:
             gmin_norm = self.Rmin / self.Rmax
         return gmin_norm
@@ -118,8 +120,8 @@ class DeviceParameters(BaseParameters):
 
     @property
     def Grange_norm(self) -> float:
-        # Return the difference between the max and min programmable resistance, normalized
-        # by the max programmable resistance
+        # Return the difference between the max and min programmable resistance,
+        # normalized by the max programmable resistance
         return self.Gmax_norm - self.Gmin_norm
 
 
@@ -128,9 +130,9 @@ class ArrayParameters(BaseParameters):
     """Parameters to desribe the behavior of the array.
 
     Attributes:
-        Icol_max (float): Maximum current in a column, in units of the maximum current that
-            can be drawn by a single device in the array. Any column current that exceeds
-            (-Icol_max, +Icol_max) will be clipped to these bounds
+        Icol_max (float): Maximum current in a column, in units of the maximum current
+            that can be drawn by a single device in the array. Any column current that
+            exceeds (-Icol_max, +Icol_max) will be clipped to these bounds
         parasitics (ParasiticsParameters): Parameters for array parasitics
     """
 
@@ -222,24 +224,27 @@ class PairedDACParameters(BasePairedParameters):
 
 @dataclass(repr=False)
 class ADCParameters(BaseParameters):
-    """Parameters for the behavior of the analog-to-digital converter used to digitize the analog
-    MVM/VMM outputs from the array.
+    """Parameters for the behavior of the analog-to-digital converter used to digitize
+        the analog MVM/VMM outputs from the array.
 
     Attributes:
-        model (str): name of the ADC model. This must match the name of a child class of IADC,
-            other than "ADC"
+        model (str): name of the ADC model. This must match the name of a child class
+            of IADC, other than "ADC"
         bits (int): bit resolution of the ADC digital output
-        stochastic_rounding (bool): whether to probabilistically round an ADC input value to one
-            of its two adjacent ADC levels, with a probability set by the distance to the level.
-            If False, value is always rounded to the closer level.
-        adc_per_ibit (bool): whether to digitize the MVM result of each input bit slice. This is
-            only used if input_bitslicing = True in the associated DACParameters. If False, it is
-            assumed by shift-and-add accumulation of input bits is done using analog peripheral
-            circuits and only the final result is digitized.
-        calibrated_range (list): the manually specified ADC min and max. This is only used if
-            adc_range_option = ADCRangeLimits.CALIBRATED. If not using BITSLICED core, this must be
-            a 1D array of length 2. If using BITSLICED core, this must be a 2D array with shape
-            (num_slices, 2) that stores the ADC min/max for each bit slice of the core.
+        stochastic_rounding (bool): whether to probabilistically round an ADC input
+            value to one of its two adjacent ADC levels, with a probability set by the
+            distance to the level. If False, value is always rounded to the closer
+            level.
+        adc_per_ibit (bool): whether to digitize the MVM result of each input bit
+            slice. This is only used if input_bitslicing = True in the associated
+            DACParameters. If False, it is assumed by shift-and-add accumulation of
+            input bits is done using analog peripheral circuits and only the final
+            result is digitized.
+        calibrated_range (list): the manually specified ADC min and max. This is only
+            used if adc_range_option = ADCRangeLimits.CALIBRATED. If not using BITSLICED
+            core, this must be a 1D array of length 2. If using BITSLICED core, this
+            must be a 2D array with shape (num_slices, 2) that stores the ADC min/max
+            for each bit slice of the core.
         adc_range_option (ADCRangeLimits): Which method is used to set ADC range limits
 
     Raises:
@@ -265,8 +270,21 @@ class ADCParameters(BaseParameters):
         super().validate()
         if self.adc_range_option is ADCRangeLimits.GRANULAR and not self.adc_per_ibit:
             raise ValueError(
-                "Granular ADC range is only supported for digital input shift and add (adc_per_ibit)",
+                "Granular ADC range is only supported for digital input"
+                "shift and add (adc_per_ibit)",
             )
+
+    # TODO: Temporary for 3.0
+    @classmethod
+    def get_adc_type(cls, model: str):
+        if model == "RampADC":
+            return RampADCParameters
+        elif model == "SarADC":
+            return SarADCParameters
+        elif model == "PipelineADC" or model == "CyclicADC":
+            return PipelineADCParameters
+        else:
+            return ADCParameters
 
 
 @dataclass(repr=False)
@@ -276,15 +294,16 @@ class RampADCParameters(ADCParameters):
     Attributes:
         gain_db (float): Open-loop gain in decibels of the operational amplifier at the
             output of the capacitive DAC (CDAC) used to generate the voltage ramp
-        sigma_capacitor (float): Standard deviation of the random variability in the minimum-sized
-            capacitor in the CDAC, normalized by the minimum capacitance value.
-        sigma_comparator (float): Standard deviation of the random variability in the input offset
-            voltage of the comparator used for ramp comparison. There is a comparator associated with
-            every array column (MVM) and/or row (VMM). The offset is normalized by the reference
-            voltage used for the ramp.
-        symmetric_cdac (bool): Whether to use the symmetric CDAC design that treats the ADC levels as
-            two's complement signed integers. If False, uses an alternative CDAC design that treats
-            the ADC levels as unsigned integers.
+        sigma_capacitor (float): Standard deviation of the random variability in the
+            minimum-sized capacitor in the CDAC, normalized by the minimum capacitance
+            value.
+        sigma_comparator (float): Standard deviation of the random variability in the
+            input offset voltage of the comparator used for ramp comparison. There is a
+            comparator associated with every array column (MVM) and/or row (VMM). The
+            offset is normalized by the reference voltage used for the ramp.
+        symmetric_cdac (bool): Whether to use the symmetric CDAC design that treats the
+            ADC levels as two's complement signed integers. If False, uses an
+            alternative CDAC design that treats the ADC levels as unsigned integers.
     """
 
     gain_db: float = 100
@@ -300,16 +319,18 @@ class SarADCParameters(ADCParameters):
     Attributes:
         gain_db (float): Open-loop gain in decibels of the operational amplifier at the
             output of the capacitive DAC (CDAC)
-        sigma_capacitor (float): Standard deviation of the random variability in the minimum-sized
-            capacitor in the CDAC, normalized by the minimum capacitance value.
-        sigma_comparator (float): Standard deviation of the random variability in the input offset
-            voltage of the comparator. The comparator compares the analog ADC input to the analog
-            CDAC output during each SAR cycle. There is a comparator for every group of ADC inputs
-        split_cdac (bool): Whether to use the split capacitor CDAC design to reduce the average size
-            of the capacitor in the CDAC.
-        group_size (int): Number of ADC inputs that share a SAR unit. Inputs within a group use the
-            same CDAC and comparator. This corresponds to the number of grouped columns (MVM) or
-            grouped rows (VMM) of the array.
+        sigma_capacitor (float): Standard deviation of the random variability in the
+            minimum-sized capacitor in the CDAC, normalized by the minimum capacitance
+            value.
+        sigma_comparator (float): Standard deviation of the random variability in the
+            input offset voltage of the comparator. The comparator compares the analog
+            ADC input to the analog CDAC output during each SAR cycle. There is a
+            comparator for every group of ADC inputs.
+        split_cdac (bool): Whether to use the split capacitor CDAC design to reduce the
+            average size of the capacitor in the CDAC.
+        group_size (int): Number of ADC inputs that share a SAR unit. Inputs within a
+            group use the same CDAC and comparator. This corresponds to the number of
+            grouped columns (MVM) or grouped rows (VMM) of the array.
     """
 
     gain_db: float = 100
@@ -324,21 +345,21 @@ class PipelineADCParameters(ADCParameters):
     """Pipeline/Cycli ADC specific non-ideality parameters.
 
     Attributes:
-        gain_db (float): Open-loop gain in decibels of the operational amplifier used as the
-            residue amplifier in a 1.5-bit stage of the pipeline ADC.
-        sigma_C1 (float): Standard deviation of the random variability in capacitor C1 used to
-            amplify the voltage by 2X in the 1.5-bit switched-capacitor stage. The amplification
-            factor is (1 + C1/C2), where C1 = C2 in the ideal case.
-        sigma_C2 (float): Standard deviation of the random variability in capacitor C2 in the
-            1.5-bit ADC stage, normalized by the nominal value of C2.
-        sigma_Cpar (float): Standard deviation of the random variability in the parasitic
-            capacitance at the negative input of the operational amplifier in he 1.5-bit stage,
-            normalized by the nominal value of C1.
-        sigma_comparator (float): Standard deviation of the random variability in the input offset
-            voltage of the comparators used in the 1.5-bit stages.
-        group_size (int): Number of ADC inputs that share single pipeline ADC and its random
-            capacitor mismatches and comparator offsets. This corresponds to the number of grouped
-            columns (MVM) or grouped rows (VMM) of the array.
+        gain_db (float): Open-loop gain in decibels of the operational amplifier used as
+            the residue amplifier in a 1.5-bit stage of the pipeline ADC.
+        sigma_C1 (float): Standard deviation of the random variability in capacitor C1
+            used to amplify the voltage by 2X in the 1.5-bit switched-capacitor stage.
+            The amplification factor is (1 + C1/C2), where C1 = C2 in the ideal case.
+        sigma_C2 (float): Standard deviation of the random variability in capacitor C2
+            in the 1.5-bit ADC stage, normalized by the nominal value of C2.
+        sigma_Cpar (float): Standard deviation of the random variability in the
+            parasitic capacitance at the negative input of the operational amplifier in
+            the 1.5-bit stage, normalized by the nominal value of C1.
+        sigma_comparator (float): Standard deviation of the random variability in the
+            input offset voltage of the comparators used in the 1.5-bit stages.
+        group_size (int): Number of ADC inputs that share single pipeline ADC and its
+            random capacitor mismatches and comparator offsets. This corresponds to the
+            number of grouped columns (MVM) or grouped rows (VMM) of the array.
     """
 
     gain_db: float = 100
@@ -355,13 +376,14 @@ class DACParameters(BaseParameters):
     that are passed to the array.
 
     Attributes:
-        model (DACModel): name of the model used to specify quantization behavior. This must
-            match the name of a child class of IDAC, other than "DAC"
+        model (DACModel): name of the model used to specify quantization behavior. This
+            must match the name of a child class of IDAC, other than "DAC"
         bits (int): bit resolution of the digital input
         input_bitslicing (bool): whether to bit slice the digital inputs to the MVM/VMM
-            and accumulate the results from the different input bit slices using shift-and-add operations.
-        sign_bit (bool): whether the digital input is encoded using sign-magnitude representation,
-            with a range that is symmetric around zero
+            and accumulate the results from the different input bit slices using
+            shift-and-add operations.
+        sign_bit (bool): whether the digital input is encoded using sign-magnitude
+            representation with a range that is symmetric around zero
         slice_size (int): Default slice size for input bit slicing. Can be overridden
             from within the individual cores
 
@@ -391,12 +413,14 @@ class WeightErrorParameters(BaseParameters):
 
     Attributes:
         enable (bool): Flag to enable adding weight errors
-        model (WeightErrorModel): Weight error model to use. This must match the name of a
-            child class of IDevice, other than "Device", "EmptyDevice", and "GenericDevice"
-        magnitude (float): # Standard deviation of the random conductance error that is applied
-            either as programming error or read noise when using one of the generic device models.
-            This is normalized either to either the maximum device conductance (NormalIndependentDevice)
-            or the target device conductance (NormalProportionalDevice)
+        model (WeightErrorModel): Weight error model to use. This must match the name of
+            a child class of IDevice, other than "Device", "EmptyDevice", and
+            "GenericDevice"
+        magnitude (float): Standard deviation of the random conductance error that is
+            applied either as programming error or read noise when using one of the
+            generic device models. This is normalized either to either the maximum
+            device conductance (NormalIndependentDevice) or the target device
+            conductance (NormalProportionalDevice)
     """
 
     enable: bool = False
@@ -409,14 +433,15 @@ class ParasiticParameters(BaseParameters):
     """Parameters to describe behavior of parasitics.
 
     Attributes:
-        enable (bool): Whether to enable parasitic resistance model. For bit sliced, this indicates
-            whether parasitics is enabled for ANY of the slices
+        enable (bool): Whether to enable parasitic resistance model. For bit sliced,
+            this indicates whether parasitics is enabled for ANY of the slices
         Rp_row (float): Parasitic resistance of the row metallic interconnects
         Rp_col (float): Parasitic resistince of the column metallic interconnects
         gate_input (bool): If True, no parasitic voltage drops occur on the input side
-            regardless of Rp value. This implements the configuration where the input row or column
-            is connected to the gate of a transistor at every cell. Because the transistor behaves
-            as a switch, the input signal must be binary. That means input bit slicing must be enabled
+            regardless of Rp value. This implements the configuration where the input
+            row or column is connected to the gate of a transistor at every cell.
+            Because the transistor behaves as a switch, the input signal must be binary.
+            That means input bit slicing must be enabled
     """
 
     enable: bool = False

@@ -105,7 +105,9 @@ class Convolution:
         self.nrow = convParams["Noc"]
         self.ncol = self.Nrows
         self.core = AnalogCore(
-            np.zeros((self.nrow, self.ncol)), params=params, empty_matrix=True,
+            np.zeros((self.nrow, self.ncol)),
+            params=params,
+            empty_matrix=True,
         )
 
         # Map wrapper cores of AnalogCore to this core so that this object can be treated like an AnalogCore
@@ -272,7 +274,8 @@ class Convolution:
                         Min_large = Min_block.transpose((1, 2, 0)).flatten()
                     else:
                         Min_large = xp.ones(
-                            int(Nrows * x_par * y_par), dtype=M_input.dtype,
+                            int(Nrows * x_par * y_par),
+                            dtype=M_input.dtype,
                         )
                         v_start, v_end = 0, NrowsX
                         for xxp in range(x_par):
@@ -293,7 +296,8 @@ class Convolution:
 
                     else:
                         Min_ij = xp.zeros(
-                            (Nic * x_par * y_par, Kx, Ky), dtype=M_input.dtype,
+                            (Nic * x_par * y_par, Kx, Ky),
+                            dtype=M_input.dtype,
                         )
                         x_end = x_start + Kx
                         v_start, v_end = 0, Nic
@@ -303,7 +307,9 @@ class Convolution:
                             y_end = y_start + Ky
                             for yyp in range(y_par):
                                 Min_ij[v_start:v_end, :, :] = M_input[
-                                    :, x_start:x_end, y_start:y_end,
+                                    :,
+                                    x_start:x_end,
+                                    y_start:y_end,
                                 ]
                                 y_start += stride
                                 y_end += stride
@@ -314,7 +320,8 @@ class Convolution:
 
                         if self.bias_row:
                             Min_large = xp.ones(
-                                (x_par * y_par, Nrows), dtype=M_input.dtype,
+                                (x_par * y_par, Nrows),
+                                dtype=M_input.dtype,
                             )
                             Min_ij = Min_ij.reshape((x_par * y_par, NrowsX))
                             Min_large[:, :-1] = Min_ij
@@ -324,7 +331,8 @@ class Convolution:
                 M_out_p = self.core.mat_multivec(Min_large)
                 # The line below is pure diabolical sorcery
                 M_out[:, i : (i + x_block), j : (j + y_block)] = M_out_p.reshape(
-                    (Noc, y_par, x_par), order="F",
+                    (Noc, y_par, x_par),
+                    order="F",
                 ).transpose((0, 2, 1))[:, :x_block, :y_block]
 
         return M_out
