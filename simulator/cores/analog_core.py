@@ -120,12 +120,6 @@ class AnalogCore:
         # Floating point epsilons come up occasionally so just store it here
         self._eps = xp.finfo(float).eps
 
-        # This protects from the case where AnalogCore is a 1D vector which breaks
-        # complex equivalent expansion. This could probably be fixed but it is a
-        # sufficiently unusual case that just throw an error for now.
-        if matrix.ndim == 1 or any(i == 1 for i in matrix.shape):
-            raise ValueError("AnalogCore must 2 dimensional")
-
         # params used in AnalogCore
         self.complex_valued = (
             self.params.core.complex_matrix or self.params.core.complex_input
@@ -140,6 +134,14 @@ class AnalogCore:
         self.vmm_input_percentile_scaling = (
             self.params.core.mapping.inputs.vmm.percentile is not None
         )
+
+        # This protects from the case where AnalogCore is a 1D vector which breaks
+        # complex equivalent expansion. This could probably be fixed but it is a
+        # sufficiently unusual case that just throw an error for now.
+        if self.complex_valued and (
+            matrix.ndim == 1 or any(i == 1 for i in matrix.shape)
+        ):
+            raise ValueError("AnalogCore must 2 dimensional")
 
         # AnalogCore has slice objects to simplify core operation stacking
         self.rslice = None

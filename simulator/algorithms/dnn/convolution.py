@@ -29,6 +29,8 @@ class Convolution:
             )
         params = kwargs["params"]
 
+        self.derived_params = False
+
         #################
         ## Get convolution parameters
         #################
@@ -38,9 +40,22 @@ class Convolution:
         self.stride = convParams["stride"]
         self.Nic = convParams["Nic"]
         self.Noc = convParams["Noc"]
-        self.Nix = convParams["Nix"]
-        self.Niy = convParams["Niy"]
         self.bias_row = convParams["bias_row"]
+
+        # These parameters will be used for derivations later
+        self.sameConv = convParams["sameConv"]
+        if not self.sameConv:
+            self.px_0 = convParams["px_0"]
+            self.px_1 = convParams["px_1"]
+            self.py_0 = convParams["py_0"]
+            self.py_1 = convParams["py_1"]
+
+        # If we don't have these values we'll get them from the first input
+        if "Nix" in convParams:
+            self.Nix = convParams["Nix"]
+        if "Niy" in convParams:
+            self.Niy = convParams["Niy"]
+
 
         #################
         ## Compute derived convolution parameters
@@ -52,19 +67,53 @@ class Convolution:
         else:
             self.Nrows = self.Kx * self.Ky * self.Nic
 
+        #################
+        ## Instantiate analog cores
+        #################
+
+        # Keep a copy of the convolution parameters
+        if type(params) is not list:
+            self.params = params
+        else:
+            self.params = params[0].copy()
+
+        # These parameter are strictly to be accessed by dnn.py
+        self.nrow = convParams["Noc"]
+        self.ncol = self.Nrows
+        self.core = AnalogCore(
+            np.zeros((self.nrow, self.ncol)), params=params,
+        )
+
+        # Map wrapper cores of AnalogCore to this core so that this object can be treated like an AnalogCore
+        self.Ncores = self.core.Ncores
+        self.cores = self.core.cores
+        self.num_cores_row = self.core.num_cores_row
+        self.num_cores_col = self.core.num_cores_col
+
+        #With both Nix and Niy in the input params we can compute the derived values now
+        if hasattr(self, "Nix") and hasattr(self, "Niy"):
+            self._compute_derived_params()
+
+    def _compute_derived_params(self,):
+        self.derived_params = True
         # Calculate output size
-        if convParams["sameConv"]:
+        if self.sameConv:
             (self.Nox, self.Noy) = (self.Nix // self.stride, self.Niy // self.stride)
         else:
-            self.px_0 = convParams["px_0"]
-            self.px_1 = convParams["px_1"]
-            self.py_0 = convParams["py_0"]
-            self.py_1 = convParams["py_1"]
             self.Nox = 1 + (self.Nix - self.Kx + self.px_0 + self.px_1) // self.stride
             self.Noy = 1 + (self.Niy - self.Ky + self.py_0 + self.py_1) // self.stride
 
+        # Modify Nwindows here
+        # This is dangerous because params can be copied so the params object won't
+        # be reflected but all current uses of Nwindows refer to the object directly
+        # Still, be very careful with this pattern, its kind of a hack
+        self.params.simulation.convolution.Nwindows = self.Nox * self.Noy
+        for row_list in self.cores:
+            for core in row_list:
+                core.params.simulation.convolution.Nwindows = self.Nox * self.Noy
+
         # If sameConv, calculate padding
-        if convParams["sameConv"]:
+        if self.sameConv:
             if (self.Kx % 2 != 0) and (self.Ky % 2 != 0):
                 if self.Nix % self.stride == 0:
                     px = max(self.Kx - self.stride, 0)
@@ -87,41 +136,7 @@ class Convolution:
                 self.py_0 = py // 2
                 self.py_1 = py - self.py_0
 
-        #################
-        ## Instantiate analog cores
-        #################
-
-        # Keep a copy of the convolution parameters
-        if type(params) is not list:
-            # Set Nwindows as a parameter to assist with profiling
-            params.simulation.convolution.Nwindows = self.Nox * self.Noy
-            self.params = params
-        else:
-            for i in range(len(params)):
-                params[i].simulation.convolution.Nwindows = self.Nox * self.Noy
-            self.params = params[0].copy()
-
-        # These parameter are strictly to be accessed by dnn.py
-        self.nrow = convParams["Noc"]
-        self.ncol = self.Nrows
-        self.core = AnalogCore(
-            np.zeros((self.nrow, self.ncol)),
-            params=params,
-            empty_matrix=True,
-        )
-
-        # Map wrapper cores of AnalogCore to this core so that this object can be treated like an AnalogCore
-        self.Ncores = self.core.Ncores
-        self.cores = self.core.cores
-        self.num_cores_row = self.core.num_cores_row
-        self.num_cores_col = self.core.num_cores_col
-
-    def set_matrix(self, matrix, verbose=False):
-        """Set the weight matrix across all constituent wrapper cores
-        The crossbar arrangement is as follows:
-        - Along the rows are ALL the kernel weights for each input channel. Input channel 0 first, then input channel 1, ...
-        - Along the columns are the weights for the different output channels.
-        """
+        # Now that Nox and Noy are set, check them against x_par and y_par
         x_par = self.params.simulation.convolution.x_par
         y_par = self.params.simulation.convolution.y_par
 
@@ -152,6 +167,13 @@ class Convolution:
                 + ")",
             )
 
+    def set_matrix(self, matrix, verbose=False):
+        """Set the weight matrix across all constituent wrapper cores
+        The crossbar arrangement is as follows:
+        - Along the rows are ALL the kernel weights for each input channel. Input channel 0 first, then input channel 1, ...
+        - Along the columns are the weights for the different output channels.
+        """
+
         # Check number of rows
         # matrix.shape[0] for VMM, matrix.shape[1] for MVM
         if matrix.shape[1] != self.Nrows:
@@ -172,6 +194,27 @@ class Convolution:
         """Read the internal matrix held by this core."""
         return self.core.get_matrix()
 
+    @property
+    def max(self):
+        return self.core.max
+
+    @property
+    def min(self):
+        return self.core.min
+
+    @property
+    def shape(self):
+        return self.core.shape
+
+    def __setitem__(self, key, value):
+        # When setting the weights directly the input may not be reshaped yet
+        # So reshape here. Should be safe as bias is 1D.
+        if value.ndim > 2:
+            value_ = value.reshape((value.shape[0], -1))
+        else:
+            value_ = value
+        self.core.__setitem__(key, value_)
+    
     def reshape_input(self, M_input):
         """Reshape a vector input to a matrix input with the dimensions specified for this conv layer. The vector must be the
         appropriate length.
@@ -197,6 +240,18 @@ class Convolution:
             )
 
     def apply_convolution(self, M_input):
+        # Moderately hacky 
+        # If we haven't set Nix/Niy yet we need to do it from the first input
+        # This assumes the first input is correctly shaped, if it isn't this will break
+        if not self.derived_params:
+            if M_input.shape[0] != self.Nic:
+                raise ValueError("Number of channels in input matrix does not match "
+                    "the number of input channels in the  convolutional layer. "
+                    "This value will be used to set the input size so no reshape is "
+                    "attempted.")
+            _, self.Nix, self.Niy = M_input.shape
+            self._compute_derived_params()
+
         if len(M_input.shape) == 1:
             M_input = M_input[:, None, None]
 
@@ -274,8 +329,7 @@ class Convolution:
                         Min_large = Min_block.transpose((1, 2, 0)).flatten()
                     else:
                         Min_large = xp.ones(
-                            int(Nrows * x_par * y_par),
-                            dtype=M_input.dtype,
+                            int(Nrows * x_par * y_par), dtype=M_input.dtype,
                         )
                         v_start, v_end = 0, NrowsX
                         for xxp in range(x_par):
@@ -296,8 +350,7 @@ class Convolution:
 
                     else:
                         Min_ij = xp.zeros(
-                            (Nic * x_par * y_par, Kx, Ky),
-                            dtype=M_input.dtype,
+                            (Nic * x_par * y_par, Kx, Ky), dtype=M_input.dtype,
                         )
                         x_end = x_start + Kx
                         v_start, v_end = 0, Nic
@@ -307,9 +360,7 @@ class Convolution:
                             y_end = y_start + Ky
                             for yyp in range(y_par):
                                 Min_ij[v_start:v_end, :, :] = M_input[
-                                    :,
-                                    x_start:x_end,
-                                    y_start:y_end,
+                                    :, x_start:x_end, y_start:y_end,
                                 ]
                                 y_start += stride
                                 y_end += stride
@@ -320,8 +371,7 @@ class Convolution:
 
                         if self.bias_row:
                             Min_large = xp.ones(
-                                (x_par * y_par, Nrows),
-                                dtype=M_input.dtype,
+                                (x_par * y_par, Nrows), dtype=M_input.dtype,
                             )
                             Min_ij = Min_ij.reshape((x_par * y_par, NrowsX))
                             Min_large[:, :-1] = Min_ij
@@ -331,8 +381,7 @@ class Convolution:
                 M_out_p = self.core.mat_multivec(Min_large)
                 # The line below is pure diabolical sorcery
                 M_out[:, i : (i + x_block), j : (j + y_block)] = M_out_p.reshape(
-                    (Noc, y_par, x_par),
-                    order="F",
+                    (Noc, y_par, x_par), order="F",
                 ).transpose((0, 2, 1))[:, :x_block, :y_block]
 
         return M_out
