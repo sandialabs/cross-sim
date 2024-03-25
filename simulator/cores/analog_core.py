@@ -210,7 +210,10 @@ class AnalogCore:
             self.num_cores_row = self.Ncores // ((ncol - 1) // NrowsMax + 1)
             self.num_cores_col = self.Ncores // self.num_cores_row
             self.cores = [
-                [self._make_core(params_[r * c]) for c in range(self.num_cores_col)]
+                [
+                    self._make_core(params_[r * self.num_cores_col + c])
+                    for c in range(self.num_cores_col)
+                ]
                 for r in range(self.num_cores_row)
             ]
 
@@ -224,9 +227,9 @@ class AnalogCore:
             # 3) Otherwise partition based on row/col_partition_strategy (max or even)
 
             if nrow % self.num_cores_row == 0:
-                self.NrowsVec = (nrow // self.num_cores_row) * np.ones(
+                self.NrowsVec = (nrow // self.num_cores_row) * xp.ones(
                     self.num_cores_row,
-                    dtype=np.int32,
+                    dtype=xp.int32,
                 )
             else:
                 # prio_partition = True in (
@@ -321,15 +324,15 @@ class AnalogCore:
         Raises:
             ValueError: Matrix is not valid for the input parameters.
         """
-        matrix = np.asarray(matrix)
+        matrix = xp.asarray(matrix)
         if self.shape != matrix.shape:
             raise ValueError("Matrix shape must match AnalogCore shape")
 
         if verbose:
-            print("Min/Max matrix values", np.min(matrix), np.max(matrix))
+            print("Min/Max matrix values", xp.min(matrix), xp.max(matrix))
 
         if (
-            matrix.dtype == np.complex64 or matrix.dtype == np.complex128
+            matrix.dtype == xp.complex64 or matrix.dtype == xp.complex128
         ) and not self.complex_valued:
             raise ValueError(
                 (
@@ -343,9 +346,9 @@ class AnalogCore:
         # Break up complex matrix into real and imaginary quadrants
         if self.complex_valued:
             Nx, Ny = matrix.shape
-            matrix_real = np.real(matrix)
-            matrix_imag = np.imag(matrix)
-            mcopy = np.zeros((2 * Nx, 2 * Ny), dtype=matrix_real.dtype)
+            matrix_real = xp.real(matrix)
+            matrix_imag = xp.imag(matrix)
+            mcopy = xp.zeros((2 * Nx, 2 * Ny), dtype=matrix_real.dtype)
             mcopy[0:Nx, 0:Ny] = matrix_real
             mcopy[Nx:, 0:Ny] = matrix_imag
             mcopy[0:Nx, Ny:] = -matrix_imag
@@ -357,8 +360,8 @@ class AnalogCore:
         # If the values would exceed this range then you would have to reprogram all
         # matrix values based on the new range, so instead we will clip and warn
         if error_mask:
-            mat_max = np.max(matrix)
-            mat_min = np.min(matrix)
+            mat_max = xp.max(matrix)
+            mat_min = xp.min(matrix)
 
             # Adding an epsilon here to avoid erroreous errors
             if mat_max > (self.max + self._eps) or mat_min < (self.min - self._eps):
@@ -468,7 +471,7 @@ class AnalogCore:
         if self.Ncores == 1:
             matrix = self.cores[0][0]._read_matrix()
         else:
-            matrix = np.zeros((self.nrow, self.ncol))
+            matrix = xp.zeros((self.nrow, self.ncol))
             for row, row_start, row_end in self.row_partition_bounds:
                 for col, col_start, col_end in self.col_partition_bounds:
                     matrix[row_start:row_end, col_start:col_end] = self.cores[row][
@@ -866,7 +869,7 @@ class AnalogCore:
     def __setitem__(self, key, value):
         rslice, cslice, full_mask, _ = self._create_mask(key)
         expanded_mat = self.get_matrix()
-        expanded_mat[rslice, cslice] = np.asarray(value)
+        expanded_mat[rslice, cslice] = xp.asarray(value)
         error_mask = None if full_mask else (rslice, cslice)
         self.set_matrix(expanded_mat, error_mask=error_mask)
 
@@ -950,21 +953,21 @@ class AnalogCore:
         """
         if (constraints.min is None or constraints.max is None) or reset:
             if constraints.percentile >= 1.0:
-                X_max = np.max(np.abs(input_))
+                X_max = xp.max(xp.abs(input_))
                 X_max *= constraints.percentile
                 min_ = -X_max
                 max_ = X_max
 
             elif constraints.percentile < 1.0:
-                X_posmax = np.percentile(input_, 100 * constraints.percentile)
-                X_negmax = np.percentile(input_, 100 - 100 * constraints.percentile)
-                X_max = np.max(np.abs(np.array([X_posmax, X_negmax])))
+                X_posmax = xp.percentile(input_, 100 * constraints.percentile)
+                X_negmax = xp.percentile(input_, 100 - 100 * constraints.percentile)
+                X_max = xp.max(xp.abs(xp.array([X_posmax, X_negmax])))
                 min_ = -X_max
                 max_ = X_max
 
         # Ensure min_ and max_ aren't the same for uniform inputs
         if min_ == max_:
-            eps = np.finfo(float).eps
+            eps = xp.finfo(float).eps
             min_ -= eps
             max_ += eps
         return (min_, max_)
@@ -1054,7 +1057,7 @@ class TransposedCore(AnalogCore):
         verbose: bool = False,
         error_mask: tuple[slice, slice] | None = None,
     ) -> None:
-        matrix = np.asarray(matrix)
+        matrix = xp.asarray(matrix)
         self.parent.set_matrix(matrix.T, verbose=verbose, error_mask=error_mask)
 
     def matvec(self, vec: npt.ArrayLike) -> npt.NDArray:
@@ -1157,7 +1160,7 @@ class MaskedCore(AnalogCore):
     def set_matrix(self, matrix: npt.ArrayLike, verbose: bool = False, error_mask=None):
         # TODO: Do we need to do anything with error_mask here?
         expanded_mat = self.parent.get_matrix()
-        expanded_mat[self.rslice, self.cslice] = np.asarray(matrix)
+        expanded_mat[self.rslice, self.cslice] = xp.asarray(matrix)
         self.parent.set_matrix(
             expanded_mat,
             verbose=verbose,
@@ -1172,7 +1175,7 @@ class MaskedCore(AnalogCore):
                 f"Dimension mismatch: {self.shape}, {other.shape}",
             )
 
-        vec_in = np.zeros(self.parent.shape[1], dtype=other.dtype)
+        vec_in = xp.zeros(self.parent.shape[1], dtype=other.dtype)
         vec_in[self.cslice] = other.flatten()
 
         vec_out = self.parent.matvec(vec_in)
@@ -1195,7 +1198,7 @@ class MaskedCore(AnalogCore):
         #   out-of-slice rows
         # For col slices we're just leaving empty entires in the input matrix
         #   corrosponding to missing rows
-        mat_in = np.zeros((self.parent.shape[1], other.shape[1]), dtype=other.dtype)
+        mat_in = xp.zeros((self.parent.shape[1], other.shape[1]), dtype=other.dtype)
         for i in range(self.parent.shape[1])[self.cslice]:
             mat_in[i] = other[(i - self.cslice.start) // self.cslice.step]
         mat_out = self.parent.matmat(mat_in)
@@ -1209,7 +1212,7 @@ class MaskedCore(AnalogCore):
                 f"Dimension mismatch: {other.shape}, {self.shape} ",
             )
 
-        vec_in = np.zeros(self.parent.shape[0], dtype=other.dtype)
+        vec_in = xp.zeros(self.parent.shape[0], dtype=other.dtype)
         vec_in[self.rslice] = other.flatten()
 
         vec_out = self.parent.vecmat(vec_in)
@@ -1228,7 +1231,7 @@ class MaskedCore(AnalogCore):
                 f"Dimension mismatch: {other.shape}, {self.shape}",
             )
 
-        mat_in = np.zeros((other.shape[0], self.parent.shape[0]), dtype=other.dtype)
+        mat_in = xp.zeros((other.shape[0], self.parent.shape[0]), dtype=other.dtype)
         for i in range(self.parent.shape[0])[self.rslice]:
             mat_in.T[i] = other.T[(i - self.rslice.start) // self.rslice.step]
 
