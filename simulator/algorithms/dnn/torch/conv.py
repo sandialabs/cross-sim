@@ -99,11 +99,6 @@ class AnalogConv2d(Conv2d, AnalogLayer):
                 and self.out_channels == self.in_channels
             ):
                 self.depthwise = True
-            else:
-                raise NotImplementedError(
-                    "AnalogConv2d does not support grouped convolutions other than "
-                    "depthwise convolutions (groups = in_channels = out_channels)",
-                )
 
         self.weight_mask = (
             slice(0, out_channels, 1),
@@ -131,7 +126,7 @@ class AnalogConv2d(Conv2d, AnalogLayer):
                 + bias_rows,
             ),
         )
-        weight_ = self.weight.detach()
+        weight_np = self.weight.detach().numpy()
         Kx, Ky = self.kernel_size
         Nic = self.in_channels
         Noc = self.out_channels
@@ -146,36 +141,25 @@ class AnalogConv2d(Conv2d, AnalogLayer):
                 self.weight.shape,
             )
 
-        if not self.depthwise:
-            for i in range(Noc):
-                # For some reason (possibly indexing related?
-                # See: https://github.com/pytorch/pytorch/issues/29973 )
-                # torch.Tensor indexing is much slower than numpy.
-                # It ends up being >5x faster to move things into numpy,
-                # do the indexing there and back to a torch tensor vs a
-                # native torch.Tensor implementation.
-                #
-                # Long run this is going to move into Convolution as a shared
-                # resource for both Torch and Keras, so for now leaving it
-                # hacky and ugly.
-                weight_np = weight_.detach().numpy()
-                submat = Tensor(
-                    np.array(
-                        [weight_np[i, k, :, :].flatten() for k in range(Nic)],
-                    ).flatten()
-                )
-                if self.analog_bias:
-                    matrix[i, :-1] = submat
-                else:
-                    matrix[i, :] = submat
-        else:
-            for i in range(Noc):
-                matrix[i, (i * Kx * Ky) : ((i + 1) * Kx * Ky)] = weight_[
-                    i,
-                    0,
-                    :,
-                    :,
-                ].flatten()
+        for i in range(Noc):
+            # For some reason (possibly indexing related?
+            # See: https://github.com/pytorch/pytorch/issues/29973 )
+            # torch.Tensor indexing is much slower than numpy.
+            # It ends up being >5x faster to move things into numpy,
+            # do the indexing there and back to a torch tensor vs a
+            # native torch.Tensor implementation.
+            #
+            # Long run this is going to move into Convolution as a shared
+            # resource for both Torch and Keras, so for now leaving it
+            # hacky and ugly.
+            submat = Tensor(
+                np.array(
+                    [weight_np[i, k, :, :].flatten() for k in range(Nic // groups)],
+                ).flatten(),
+            )
+            offset = i // (Noc // groups)
+            submat_size = submat.shape[0]
+            matrix[i, offset * submat_size : (offset + 1) * submat_size] = submat
 
         if self.analog_bias:
             matrix[:, -1] = self.bias
@@ -203,15 +187,20 @@ class AnalogConv2d(Conv2d, AnalogLayer):
     def get_core_weights(self):
         """Returns weight and biases with programming errors."""
         matrix = self.get_matrix()
-        if not self.depthwise:
+        if self.groups == 1:
             weight = matrix[self.weight_mask].reshape(self.weight.shape)
         else:
             weight = zeros(self.weight.shape)
-            Kx, Ky = self.kernel_size
+            weights_per_out = (
+                self.weight.shape[1] * self.weight.shape[2] * self.weight.shape[3]
+            )
+            outs_per_group = self.out_channels // self.groups
             for i in range(self.out_channels):
-                weight[i] = matrix[i, (i * Kx * Ky) : ((i + 1) * Kx * Ky)].reshape(
-                    (Kx, Ky),
-                )
+                group = i // outs_per_group
+                weight[i] = matrix[
+                    i,
+                    group * weights_per_out : (group + 1) * weights_per_out,
+                ].reshape(self.weight.shape[1:])
         if self.analog_bias:
             bias = matrix[self.bias_mask].sum(1)
         else:
