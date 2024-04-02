@@ -107,8 +107,8 @@ def mvm_parasitics(vector, matrix, params, useMask=False, mask=None, row_in=True
         Rp_in = params.xbar.array.parasitics.Rp_row
         Rp_out = params.xbar.array.parasitics.Rp_col
     else:
-        Rp_in = params.xbar.array.parasitics.Rp_row
-        Rp_out = params.xbar.array.parasitics.Rp_col
+        Rp_in = params.xbar.array.parasitics.Rp_col
+        Rp_out = params.xbar.array.parasitics.Rp_row
 
     Niters_max = params.simulation.Niters_max_parasitics
     Verr_th = params.simulation.Verr_th_mvm
