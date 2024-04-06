@@ -60,7 +60,7 @@ def augment_parameters(config):
 
     # fast_balanced gives a performance boost with BALANCED or BITSLICED_BALANCED core if certain conditions are met
     noReadNoise = (config.noise_model == "generic" and config.alpha_noise == 0) or config.noise_model == "none"
-    if config.Rp_col > 0 or (config.Rp_row > 0 and not config.gate_input) or not noReadNoise or config.interleaved_posneg:
+    if config.Rp_col > 0 or (config.Rp_row > 0 and not config.gate_input) or not noReadNoise or config.interleaved_posneg or config.export_conductances:
         config.fast_balanced = False
     else:
         config.fast_balanced = True
