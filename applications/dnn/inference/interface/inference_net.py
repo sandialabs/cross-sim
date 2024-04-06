@@ -75,6 +75,7 @@ def set_params(**kwargs):
     gpu_id = kwargs.get("gpu_id",0)
     profile_ADC_inputs = kwargs.get("profile_ADC_inputs",False)
     profile_ADC_reluAware = kwargs.get("profile_ADC_reluAware",False)
+    export_conductances = kwargs.get("export_conductances",False)
 
     balanced_style = kwargs.get("balanced_style","one_sided")
     input_bitslicing = kwargs.get("input_bitslicing",False)
@@ -137,6 +138,9 @@ def set_params(**kwargs):
     params.simulation.convolution.y_par = int(y_par) # Number of sliding window steps to do in parallel (y)
     params.simulation.convolution.weight_reorder = weight_reorder
     params.simulation.convolution.conv_matmul = conv_matmul
+
+    if export_conductances:
+        params.simulation.disable_fast_balanced = True
 
     ############### Crossbar weight mapping settings
 
@@ -393,6 +397,8 @@ def inference(ntest,dataset,paramsList,sizes,keras_model,layerParams,**kwargs):
     bias_bits = kwargs.get("bias_bits",0)
     show_HW_config = kwargs.get("show_HW_config",False)
     return_network_output = kwargs.get("return_network_output",False)
+    export_conductances = kwargs.get("export_conductances",False)
+    conductances_dir = kwargs.get("conductances_dir","./")
 
     ####################
 
@@ -508,6 +514,12 @@ def inference(ntest,dataset,paramsList,sizes,keras_model,layerParams,**kwargs):
 
     # Import weights to CrossSim cores
     dnn.read_weights_keras(weight_dict)
+
+    # Export conductances
+    if export_conductances:
+        dnn.export_conductances(conductances_dir)
+
+    # Expand cores if needed for SW packing
     dnn.expand_cores()
 
     # Import bias weights to be added digitally

@@ -253,6 +253,8 @@ for j in range(Nlayers):
             digital_bias=config.digital_bias,
             analog_batchnorm=analog_batchnorm,
             adc_type=config.adc_type,
+            input_slice_size=config.input_slice_size,
+            export_conductances=config.export_conductances,
             profile_ADC_inputs=profile_ADC_inputs,
             profile_ADC_reluAware=profile_ADC_reluAware_j)
 
@@ -294,6 +296,9 @@ accuracy, _ = inference(ntest=config.ntest,
     dataset_normalization=config.dataset_normalization,
     adc_range_option=config.adc_range_option,
     show_HW_config=config.show_HW_config,
+    return_network_output=config.return_network_output,
     calibration=calibration,
     profiling_folder=profiling_folder,
-    profiling_settings=[profile_DAC_inputs,profile_ADC_inputs,profile_ADC_reluAware])
+    profiling_settings=[profile_DAC_inputs,profile_ADC_inputs,profile_ADC_reluAware],    
+    export_conductances=config.export_conductances,
+    conductances_dir=config.conductances_dir)

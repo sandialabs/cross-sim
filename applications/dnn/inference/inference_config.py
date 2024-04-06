@@ -78,6 +78,8 @@ elif task == "mnist":
     topk = 1
 time_interval = True
 
+#### Some other settings specific to neural networks
+
 # Return the output of the final layer (before argmax) in addition to classification accuracy
 # This is useful if performing regression
 return_network_output = False
@@ -87,6 +89,12 @@ show_model_summary = False
 
 # Show analog hardware configuration
 show_HW_config = False
+
+# Save the normalized conductances for all the arrays to a file
+# Conductances will have programming errs and drift applied (if enabled)
+# If True, set the path to the desired directory for the file
+export_conductances = False
+conductances_dir = "./"
 
 # Disable sliding window packing?
 # SW packing is only used to speed up simulations if read noise or parasitic resistance is enabled

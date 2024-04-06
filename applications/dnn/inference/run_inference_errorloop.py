@@ -231,7 +231,9 @@ for p in range(len(alpha_error_vec)):
                     Nslices=config.Nslices,
                     digital_bias=config.digital_bias,
                     analog_batchnorm=analog_batchnorm,
-                    adc_type=config.adc_type)
+                    adc_type=config.adc_type,
+                    input_slice_size=config.input_slice_size,
+                    export_conductances=config.export_conductances)
 
                 if Ncores == 1:
                     paramsList[j] = params
@@ -271,7 +273,9 @@ for p in range(len(alpha_error_vec)):
             dataset_normalization=config.dataset_normalization,
             adc_range_option=config.adc_range_option,
             show_HW_config=config.show_HW_config,
-            return_network_output=config.return_network_output)
+            return_network_output=config.return_network_output,
+            export_conductances=config.export_conductances,
+            conductances_dir=config.conductances_dir)
 
         accuracy_table[p,q,:] = accuracy
 
