@@ -257,7 +257,7 @@ def _convert_children_to_torch(
             setattr(
                 module,
                 name,
-                _conversion_map[type(child)].to_torch(child, physical_weights_),
+                type(child).to_torch(child, physical_weights_),
             )
 
         # Then recursively descend

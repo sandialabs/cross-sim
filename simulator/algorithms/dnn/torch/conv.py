@@ -18,13 +18,15 @@ from __future__ import annotations
 from .layer import AnalogLayer
 
 from simulator import CrossSimParameters
-from simulator.algorithms.dnn.convolution import Convolution
-from torch import Tensor, zeros, arange, stack
+from simulator.algorithms.dnn.analog_convolution import (
+    AnalogConvolution,
+    AnalogConvolution2D,
+)
+from torch import Tensor, zeros, arange, from_dlpack
 from torch.nn import Conv2d, Parameter
+from torch.nn.functional import pad
 from torch.autograd import Function
 from torch import ops
-
-import numpy as np
 
 
 class AnalogConv2d(Conv2d, AnalogLayer):
@@ -62,28 +64,11 @@ class AnalogConv2d(Conv2d, AnalogLayer):
 
         # Torch has already handled base incompatibilities
         # Check for CrossSim-specific ones
-        if bias_rows > 1:
-            raise NotImplementedError("Conv2d does not support multiple bias rows")
-
-        if self.stride[0] != self.stride[1]:
-            raise NotImplementedError(
-                "AnalogConv2d does not support different horizontal and vertical "
-                "strides",
-            )
 
         if self.dilation[0] != 1 or self.dilation[1] != 1:
             raise NotImplementedError(
                 "AnalogConv2d does not support dilated convolutions",
             )
-
-        if self.padding_mode != "zeros":
-            raise NotImplementedError(
-                "AnalogConv2d does not support padding_mode other than 'zeros'",
-            )
-
-        # TODO: implement
-        if self.padding == "valid":
-            raise NotImplementedError("AnalogConv2d does not support 'valid' padding")
 
         self.params = params.copy()
         self.bias_rows = bias_rows
@@ -91,14 +76,6 @@ class AnalogConv2d(Conv2d, AnalogLayer):
         # Easier to track analog bias than digital bias
         # Avoids conditionals on bias and digital_bias
         self.analog_bias = bias and bias_rows > 0
-
-        self.depthwise = False
-        if self.groups != 1:
-            if (
-                self.groups == self.in_channels
-                and self.out_channels == self.in_channels
-            ):
-                self.depthwise = True
 
         self.weight_mask = (
             slice(0, out_channels, 1),
@@ -109,80 +86,73 @@ class AnalogConv2d(Conv2d, AnalogLayer):
             slice(self.weight_mask[1].stop, self.weight_mask[1].stop + bias_rows, 1),
         )
 
-        # Build convParams and sync the params object
-        convParams = self._build_conv_dict()
-        self._synchronize_params()
-
-        self.core = Convolution(convParams, params=self.params)
-        self.core.set_matrix(self.form_matrix().detach().numpy())
+        self.core = AnalogConvolution2D(
+            self.params,
+            self.in_channels,
+            self.out_channels,
+            self.kernel_size,
+            self.stride,
+            self.dilation,
+            self.groups,
+            int(self.bias_rows and bias),
+        )
+        self.core.set_matrix(self.form_matrix().detach())
 
     def form_matrix(self) -> Tensor:
         """ """
-        bias_rows = self.bias_rows if self.analog_bias else 0
-        matrix = zeros(
-            (
-                self.out_channels,
-                self.kernel_size[0] * self.kernel_size[1] * self.in_channels
-                + bias_rows,
-            ),
-        )
-        weight_np = self.weight.detach().numpy()
-        Kx, Ky = self.kernel_size
-        Nic = self.in_channels
-        Noc = self.out_channels
-        groups = self.groups
-
-        # Ensure weight.shape is (Noc, Nic, Kx, Ky)
-        if self.weight.shape != (Noc, Nic // groups, Kx, Ky):
-            raise ValueError(
-                "Expected weight shape",
-                (Noc, Nic // groups, Kx, Ky),
-                "got",
-                self.weight.shape,
-            )
-
-        for i in range(Noc):
-            # For some reason (possibly indexing related?
-            # See: https://github.com/pytorch/pytorch/issues/29973 )
-            # torch.Tensor indexing is much slower than numpy.
-            # It ends up being >5x faster to move things into numpy,
-            # do the indexing there and back to a torch tensor vs a
-            # native torch.Tensor implementation.
-            #
-            # Long run this is going to move into Convolution as a shared
-            # resource for both Torch and Keras, so for now leaving it
-            # hacky and ugly.
-            submat = Tensor(
-                np.array(
-                    [weight_np[i, k, :, :].flatten() for k in range(Nic // groups)],
-                ).flatten(),
-            )
-            offset = i // (Noc // groups)
-            submat_size = submat.shape[0]
-            matrix[i, offset * submat_size : (offset + 1) * submat_size] = submat
-
+        # AnalogConvolution expects weight matrices with the order
+        # (Kx, Ky, Nic, Noc), torch uses (Noc, Nic, Kx, Ky)
+        # Intentionally moving this onto the CPU
+        weight_ = self.weight.detach().cpu()
         if self.analog_bias:
-            matrix[:, -1] = self.bias
-
-        return matrix
+            return from_dlpack(self.core.form_matrix(weight_, self.bias.detach().cpu()))
+        else:
+            return from_dlpack(self.core.form_matrix(weight_))
 
     def forward(self, x: Tensor) -> Tensor:
         """AnalogConv2d forward operation.
 
         See AnalogConvGrad.forward for details.
         """
-        return AnalogConvGrad.apply(
-            x,
+        # Use the same padding logic as torch.nn.Conv2d.
+        # https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/conv.py#L453
+        # Special-casing zeros just because pad expects "constant" not "zeros"
+
+        if self.padding_mode != "zeros":
+            x_ = pad(x, self._reversed_padding_repeated_twice, self.padding_mode)
+        else:
+            x_ = pad(x, self._reversed_padding_repeated_twice)
+
+        # Now use x_ to set Nwindows
+        # This is dangerous because params can be copied so the params object
+        # won't be reflected but all current uses of Nwindows refer to the
+        # object directly.
+        # Still, be very careful with this pattern, its kind of a hack
+        if self.padding == "same":
+            Nox, Noy = x_.shape[0] // self.stride[0], x_.shape[1] // self.stride[1]
+        else:
+            Nox = 1 + (x_.shape[0] - self.kernel_size[0]) // self.stride[0]
+            Noy = 1 + (x_.shape[1] - self.kernel_size[1]) // self.stride[1]
+
+        for row_list in self.core.cores:
+            for core in row_list:
+                core.params.simulation.convolution.Nwindows = Nox * Noy
+
+        out = AnalogConvGrad.apply(
+            x_,
             self.weight,
             self.bias,
             self.core,
             self.bias_rows,
             self.stride,
-            self.padding,
+            # Since we already padded here, we can simply set padding to (0,0)
+            (0, 0),
             self.dilation,
             self.output_padding,
             self.groups,
         )
+
+        return out
 
     def get_core_weights(self):
         """Returns weight and biases with programming errors."""
@@ -218,16 +188,18 @@ class AnalogConv2d(Conv2d, AnalogLayer):
 
         self.analog_bias = self.bias is not None and self.bias_rows > 0
 
-        if self.bias_rows > 1:
-            raise NotImplementedError
-
-        # Build new convParams and resync the params object
-        convParams = self._build_conv_dict()
-        self._synchronize_params()
-
-        # Shape might have changedn need to call form_matrix again.
-        self.core = Convolution(convParams, params=self.params)
-        self.core.set_matrix(self.form_matrix().detach().numpy())
+        # Shape might have changed need to call form_matrix again.
+        self.core = AnalogConvolution2D(
+            self.params,
+            self.in_channels,
+            self.out_channels,
+            self.kernel_size,
+            self.stride,
+            self.dilation,
+            self.groups,
+            int(self.bias_rows and self.bias is not None),
+        )
+        self.core.set_matrix(self.form_matrix().detach())
 
     @classmethod
     def from_torch(
@@ -293,52 +265,6 @@ class AnalogConv2d(Conv2d, AnalogLayer):
 
         return torch_layer
 
-    def _build_conv_dict(self) -> dict[str, str | bool]:
-        """Create convParam dict for input to Convolution from layer params."""
-        convParams = {}
-        convParams["Nic"] = self.in_channels
-        convParams["Noc"] = self.out_channels
-        convParams["Kx"], convParams["Ky"] = self.kernel_size
-        convParams["stride"] = self.stride[0]
-        convParams["bias_row"] = self.analog_bias
-
-        if isinstance(self.padding, str) and self.padding == "same":
-            convParams["sameConv"] = True
-        else:
-            convParams["sameConv"] = False
-            convParams["px_0"] = self.padding[0]
-            convParams["px_1"] = self.padding[0]
-            convParams["py_0"] = self.padding[1]
-            convParams["py_1"] = self.padding[1]
-
-        return convParams
-
-    def _synchronize_params(self) -> None:
-        """Synchronize the params object from the internal parameters."""
-        # Don't modify the following params:
-        # x_par, y_par, weight_reoder, and conv_matmul are pure inputs
-        # Nwindows is derived in Convolution
-
-        if isinstance(self.params, CrossSimParameters):
-            self.params.simulation.convolution.is_conv_core = True
-            self.params.simulation.convolution.Kx = self.kernel_size[0]
-            self.params.simulation.convolution.Ky = self.kernel_size[1]
-            # We do not currently support different X, Y strides
-            self.params.simulation.convolution.stride = self.stride[0]
-            self.params.simulation.convolution.Noc = self.out_channels
-            self.params.simulation.convolution.Nic = self.out_channels
-            self.params.simulation.convolution.bias_row = self.analog_bias
-
-        elif isinstance(self.params, list):
-            for p in self.params:
-                p.simulation.convolution.is_conv_core = True
-                p.simulation.convolution.Kx = self.kernel_size[0]
-                p.simulation.convolution.Ky = self.kernel_size[1]
-                p.simulation.convolution.stride = self.stride[0]
-                p.simulation.convolution.Noc = self.out_channels
-                p.simulation.convolution.Nic = self.out_channels
-                p.simulation.convolution.bias_row = self.analog_bias
-
 
 class AnalogConvGrad(Function):
     """Gradient implementation for CrossSim Conv2D layer.
@@ -352,7 +278,7 @@ class AnalogConvGrad(Function):
         x: Tensor,
         weight: Tensor,
         bias: Tensor | None,
-        core: Convolution,
+        core: AnalogConvolution,
         bias_rows: int,
         stride: tuple,
         padding: tuple,
@@ -381,7 +307,7 @@ class AnalogConvGrad(Function):
                 Integer number of rows used for the bias (0 meaning digital
                 bias)
             stride: Conv2D.stride parameter
-            padding: Conv2D.padding parameter
+            padding: Conv2D.padding parameter, must be int tuple
             dilation: Conv2D.dilation parameter
             output_padding: Conv2D.output_padding parameter
             groups: Conv2D.groups parameter
@@ -399,38 +325,17 @@ class AnalogConvGrad(Function):
 
         analog_bias = bias is not None and bool(bias_rows)
 
-        # Mimicking the baseline torch behavior, if the input is 4D (batch >1)
-        # the result is 4D, even if the batch size (leading dimension) is 1.
-        # If the input is 3D (no batch) the result will be 3D.
-
-        # Prepare a list of individual convolution ops, convolution already
-        # uses matul so just implement a series of conv ops and stack
-        if x.ndim == 3:
-            return AnalogConvGrad._apply_convolution(x, core, bias, analog_bias)
-        else:
-            # Possibly some faster approach using reshape sorcery
-            # Simple stacking probably fast enough for now
-            # TODO: Not actually fast enough, do the sorcery
-            return stack(
-                [
-                    AnalogConvGrad._apply_convolution(x[i], core, bias, analog_bias)
-                    for i in range(x.shape[0])
-                ],
-            )
-
-    @staticmethod
-    def _apply_convolution(
-        x: Tensor,
-        core: Convolution,
-        bias: Tensor | None,
-        analog_bias: bool,
-    ) -> Tensor:
-        out = Tensor(core.apply_convolution(x.detach()))
+        out = from_dlpack(core.apply_convolution(x.detach()))
 
         if bias is not None and not analog_bias:
-            return out + bias.expand(*reversed(out.shape)).permute(
-                *arange(out.ndim - 1, -1, -1),
-            )
+            if out.ndim == 3:
+                return out + bias.expand(*reversed(out.shape)).permute(
+                    *arange(out.ndim - 1, -1, -1),
+                )
+            elif out.ndim == 4:
+                return out + bias.expand(
+                    (out.shape[0], out.shape[3], out.shape[2], out.shape[1]),
+                ).permute(0, 3, 2, 1)
         else:
             return out
 
@@ -441,11 +346,6 @@ class AnalogConvGrad(Function):
         Uses ideal (unquantized and unnoised) weights (and biases with analog
         bias) for the gradients. Based on internal torch convolution_backward.
         """
-        if ctx.padding == "same":
-            raise NotImplementedError(
-                "AnalogConv2d.backward does not support 'same' padding.",
-            )
-
         (x, weight, bias) = ctx.saved_tensors
 
         output_mask = (

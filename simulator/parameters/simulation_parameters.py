@@ -124,7 +124,7 @@ class ConvolutionParameters(BaseParameters):
     x_par: int = 1
     y_par: int = 1
     weight_reorder: bool = False
-    conv_matmul: bool = False
+    conv_matmul: bool = True
     bias_row: bool = False
     Nwindows: int = 1
 

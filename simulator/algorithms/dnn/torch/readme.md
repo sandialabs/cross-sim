@@ -12,6 +12,4 @@ This directory contains a work-in-progress implementation of using CrossSim for 
 - Automatic conversion of layers within Torch networks to CrossSim layers
 
 ### Known Limitations
-- AnalogConv2d layers do not support dilated convolutions, different horizontal and vertical strides, or non-depthwise grouped convolutions.
-- AnalogConv2d.backward() is significantly slower than baseline torch for large batches.
-- AnalogConv2d does not support bias row splitting (multiple bias rows).
+- AnalogConv2d layers do not support dilated convolutions.

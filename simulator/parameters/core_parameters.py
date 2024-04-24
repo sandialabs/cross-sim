@@ -80,6 +80,23 @@ class PartitionStrategy(IntEnum):
     EQUAL = 2
 
 
+class OutputDType(IntEnum):
+    """How is the output dtype of an AnalogCore determined.
+
+    "NATIVE": Use the type promotion semantics of the backend
+    "MATRIX": Use the matrix's dtype
+    "INPUT": Use the inputs's dtype
+    "FLOAT32": Use backends float32 (xp.float32)
+    "FLOAT64": Use backends float64 (xp.float64)
+    "FLOAT16": Use backends float16 (xp.float16)
+    """
+    NATIVE = 1
+    MATRIX = 2
+    INPUT = 3
+    FLOAT32 = 4
+    FLOAT64 = 5
+    FLOAT16 = 6
+
 @dataclass(repr=False)
 class CoreParameters(BaseParameters):
     """Parameters to describe the behavior of a core.
@@ -103,6 +120,7 @@ class CoreParameters(BaseParameters):
     weight_bits: int = 0
     complex_matrix: bool = False
     complex_input: bool = False
+    output_dtype: OutputDType = OutputDType.NATIVE
     balanced: BalancedCoreParameters = None
     bit_sliced: BitSlicedCoreParameters = None
     offset: OffsetCoreParameters = None

@@ -18,7 +18,7 @@ from __future__ import annotations
 from .layer import AnalogLayer
 
 from simulator import AnalogCore, CrossSimParameters
-from torch import Tensor, cat, ones, kron
+from torch import Tensor, cat, ones, kron, from_dlpack
 from torch.nn import Linear, Parameter
 from torch.autograd import Function
 
@@ -54,7 +54,7 @@ class AnalogLinear(Linear, AnalogLayer):
             slice(in_features, in_features + bias_rows, 1),
         )
 
-        self.core = AnalogCore(self.form_matrix().detach().numpy(), self.params)
+        self.core = AnalogCore(self.form_matrix().detach(), self.params)
 
     def form_matrix(self) -> Tensor:
         """ """
@@ -103,7 +103,7 @@ class AnalogLinear(Linear, AnalogLayer):
         # Also means we can't just the matrix from the old core, need to call
         # form_matrix again.
         self.analog_bias = self.bias is not None and self.bias_rows > 0
-        self.core = AnalogCore(self.form_matrix().detach().numpy(), self.params)
+        self.core = AnalogCore(self.form_matrix().detach(), self.params)
 
     @classmethod
     def from_torch(
@@ -227,18 +227,19 @@ class AnalogLinearGrad(Function):
 
         # Perform the operation using CrossSim
         if not (bias is not None and bias_rows):
-            # Transpose is a nop for 1D vectors so no overhead to this.
-            # With 2D dot(x.T).T enables the matmat fast-path if possible.
-            out = Tensor(core.dot(x_.detach().numpy().T).T)
+            if x.ndim == 1:
+                out = from_dlpack(core.dot(x_.detach()))
+            else:
+                out = from_dlpack(core.dot(x_.detach().T).T)
             if bias is not None:
                 out += bias
         else:
             if x.ndim == 1:
                 x_aug = cat((x_, ones(bias_rows)))
-                out = Tensor(core.dot(x_aug.detach().numpy()))
+                out = from_dlpack(core.dot(x_aug.detach()))
             else:
                 x_aug = cat((x_.T, ones((bias_rows, x_.shape[0]))))
-                out = Tensor(core.dot(x_aug.detach().numpy()).T)
+                out = from_dlpack(core.dot(x_aug.detach()).T)
 
         # For inputs larget than 2D reshape back to the expected shape
         if x.ndim < 3:

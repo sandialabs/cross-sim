@@ -197,7 +197,7 @@ class AnalogLayer(Module, ABC):
         (e.g. add_()). Primarily used forCrossSim-in-the-loop training as
         optimizers use in-place updates.
         """
-        self.core.set_matrix(self.form_matrix().detach().numpy())
+        self.core.set_matrix(self.form_matrix().detach())
 
     def _set_weight(self, weight: Tensor) -> None:
         """Updates the analog representation of the weights.
@@ -206,7 +206,7 @@ class AnalogLayer(Module, ABC):
         if needed for percentile weight scaling.
         """
         if self._consistent_limits():
-            self.core[self.weight_mask] = weight.detach().numpy()
+            self.core[self.weight_mask] = weight.detach()
         else:
             # If this layer has an analog bias but it doesn't exist yet don't
             # bother forming the matrix with dummy data and forming the matrix
@@ -214,7 +214,7 @@ class AnalogLayer(Module, ABC):
             # allocated.
             if self.analog_bias and not hasattr(self, "bias"):
                 return
-            self.core.set_matrix(self.form_matrix().detach().numpy())
+            self.core.set_matrix(self.form_matrix().detach())
 
     def _set_bias(self, bias: Tensor) -> None:
         """Updates the analog representation of the bias.
@@ -228,9 +228,9 @@ class AnalogLayer(Module, ABC):
                 .reshape((self.core.shape[0], 1))
                 .repeat((1, self.bias_rows))
             )
-            self.core[self.bias_mask] = bias_expanded.detach().numpy()
+            self.core[self.bias_mask] = bias_expanded.detach()
         else:
-            self.core.set_matrix(self.form_matrix().detach().numpy())
+            self.core.set_matrix(self.form_matrix().detach())
 
     def _consistent_limits(self) -> bool:
         """Checks whether updates to internal attributes require rescaling.
@@ -259,7 +259,7 @@ class AnalogLayer(Module, ABC):
 
         (w_min, w_max) = AnalogCore._set_limits_percentile(
             weight_params,
-            self.weight.detach().numpy(),
+            self.weight.detach(),
             reset=True,
         )
         w_consistent = w_max == self.core.max
@@ -269,7 +269,7 @@ class AnalogLayer(Module, ABC):
         if self.analog_bias and hasattr(self, "bias"):
             (b_min, b_max) = AnalogCore._set_limits_percentile(
                 weight_params,
-                self.bias.detach().numpy(),
+                self.bias.detach(),
                 reset=True,
             )
             b_consistent = b_max == self.core.max
