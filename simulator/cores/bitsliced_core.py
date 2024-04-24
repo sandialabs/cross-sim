@@ -291,9 +291,9 @@ class BitslicedCore(WrapperCore):
                 else:
                     if self.params.simulation.fast_balanced:
                         if op == "mvm":
-                            output_slices[i] = xp.dot(self.W_balanced[i], vector)
+                            output_slices[i] = xp.matmul(self.W_balanced[i], vector)
                         else:
-                            output_slices[i] = xp.dot(vector, self.W_balanced[i])
+                            output_slices[i] = xp.matmul(vector, self.W_balanced[i])
                     else:
                         if not self.interleaved_posneg:
                             output_pos = getattr(self.core_slices[i][0], function)()
@@ -369,12 +369,12 @@ class BitslicedCore(WrapperCore):
                     else:
                         if self.params.simulation.fast_balanced:
                             if op == "mvm":
-                                output_i_k = xp.dot(
+                                output_i_k = xp.matmul(
                                     self.W_balanced[i],
                                     vector_slices[k],
                                 )
                             else:
-                                output_i_k = xp.dot(
+                                output_i_k = xp.matmul(
                                     vector_slices[k],
                                     self.W_balanced[i],
                                 )

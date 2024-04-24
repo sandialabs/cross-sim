@@ -184,12 +184,12 @@ class NumericCore(ICore, metaclass=ABCMeta):
         elif matrix_neg is not None:
             # Interleaved without parasitics: identical to normal balanced core operation
             if row_in:
-                result = xp.dot(*op_pair) - xp.dot(matrix_neg, vector)
+                result = xp.matmul(*op_pair) - xp.matmul(matrix_neg, vector)
             else:
-                result = xp.dot(*op_pair) - xp.dot(vector, matrix_neg)
+                result = xp.matmul(*op_pair) - xp.matmul(vector, matrix_neg)
         else:
             # Compute using matrix vector dot product
-            result = xp.dot(*op_pair)
+            result = xp.matmul(*op_pair)
 
         return result
 

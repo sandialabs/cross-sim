@@ -606,15 +606,10 @@ class AnalogCore:
             )
 
         # Numpy handles N-D inputs as a stack of matrices of the trailing 2
-        # dimensions. This is the key to understanding the code below. For both
-        # the transpose and the indexing we start from the 2D case and then
-        # build a stack.
-        # Transpose operation: In the 2D case, this reduces to transpose((0,1))
-        # which is a nop. As you go to higher dimensions we add leading
-        # dimensions so (1, 2, 0, 3) for 4D.
+        # dimensions. This is the key to understanding the code below. For the
+        # indexing we start from the 2D case and then build a stack.
         if self.Ncores == 1:
             output = self.cores[0][0].run_xbar_mvm(mcopy, input_range)
-            output = output.transpose((*np.arange(1, mat.ndim - 1), 0, mat.ndim - 1))
 
         else:
             # The output is a stack of matrices based with a shape based on the
@@ -637,13 +632,11 @@ class AnalogCore:
             for row, row_start, row_end in self.row_partition_bounds:
                 for col, col_start, col_end in self.col_partition_bounds:
                     mat_in = mcopy[..., col_start:col_end, :]
-                    output[..., row_start:row_end, :] += (
-                        self.cores[row][col]
-                        .run_xbar_mvm(
-                            mat_in,
-                            input_range,
-                        )
-                        .transpose((*np.arange(1, mat.ndim - 1), 0, mat.ndim - 1))
+                    output[..., row_start:row_end, :] += self.cores[row][
+                        col
+                    ].run_xbar_mvm(
+                        mat_in,
+                        input_range,
                     )
 
         if self.complex_valued:
@@ -771,14 +764,15 @@ class AnalogCore:
 
         return output.astype(self.output_type(mat.dtype))
 
-    def dot(self, x: npt.ArrayLike) -> npt.NDArray:
-        """Numpy-like ndarray.dot function for N-D inputs.
+    def matmul(self, x: npt.ArrayLike) -> npt.NDArray:
+        """Numpy-like np.matmul function for N-D inputs.
 
         Performs an N-D matrix dot product with the programmed matrix. For >=2D
         inputs this will decompose the matrix into a series for 1D inputs or use a
         (generally faster) matrix-matrix approximation if possible given the simulation
-        parameters. In the error free case this should be identical to A.dot(x) where A
-        is the numpy array programmed with set_matrix().
+        parameters. In the error free case this should be identical to
+        ``np.matmul(A, x)`` or ``A @ x`` where A is the numpy array programmed with
+        set_matrix().
 
         Args:
             x: An N-D numpy-like array to be multiplied.
@@ -810,14 +804,85 @@ class AnalogCore:
             else:
                 return self.matmat(x)
 
+    def rmatmul(self, x: npt.ArrayLike) -> npt.NDArray:
+        """Numpy-like np.matmul function for N-D inputs.
+
+        Performs an N-D matrix dot product with the programmed matrix. For >=2D
+        inputs this will decompose the matrix into a series for 1D inputs or use a
+        (generally faster) matrix-matrix approximation if possible given the simulation
+        parameters. In the error free case this should be identical to
+        ``np.matmul(x, A)`` or ``x @ A`` where A is the numpy array programmed with
+        set_matrix().
+
+        Args:
+            x: An N-D numpy-like array to be multiplied.
+
+        Returns:
+            An N-D numpy-like array result.
+        """
+        x = xp.asarray(x)
+
+        # As with dot, sending all ndim == 2 to matmat fixes some shape inconsistency
+        # when compared to numpy
+        if x.ndim == 1:
+            return self.vecmat(x)
+        else:
+            # Stacking fails for shape (0, X), revert to matmat which handles this
+            # Empty matix is weird so ignoring user preference here
+            if not (self.fast_matmul or x.shape[0] == 0):
+                return xp.vstack([self.vecmat(row) for row in x])
+            else:
+                return self.rmatmat(x)
+
+    def dot(self, x: npt.ArrayLike) -> npt.NDArray:
+        """Numpy-like ndarray.dot function for N-D inputs.
+
+        Performs an N-D matrix dot product with the programmed matrix. For >=2D
+        inputs this will decompose the matrix into a series for 1D inputs or use a
+        (generally faster) matrix-matrix approximation if possible given the simulation
+        parameters. In the error free case this should be identical to ``A.dot(x)`` or
+        ``np.dot(A,x)`` where A is the numpy array programmed with set_matrix().
+
+        Args:
+            x: An N-D numpy-like array to be multiplied.
+
+        Returns:
+            An N-D numpy-like array result.
+        """
+        x = xp.asarray(x)
+
+        # Technically ndim=2 (N,1) inputs are also "vectors" but by they require a
+        # different output shape which is handled correctly if they go through the
+        # matmat path instead.
+        if x.ndim == 1:
+            return self.matvec(x)
+        else:
+            # Stacking fails for shape (X, 0), revert to matmat which handles this
+            # Empty matix is weird so ignoring user preference here
+            if not (self.fast_matmul or x.shape[1] == 0):
+                return xp.hstack(
+                    [
+                        self.matvec(
+                            col.reshape(
+                                -1,
+                            ),
+                        ).reshape(-1, 1)
+                        for col in x.T
+                    ],
+                )
+            else:
+                return self.matmat(x).transpose(
+                    (x.ndim - 2, *np.arange(0, x.ndim - 2), x.ndim - 1),
+                )
+
     def rdot(self, x: npt.ArrayLike) -> npt.NDArray:
         """Numpy-like ndarray.dot() function for N-D inputs.
 
         Performs an N-D matrix dot product with the programmed matrix. For >=2D
         inputs this will decompose the matrix into a series for 1D inputs or use a
         (generally faster) matrix-matrix approximation if possible given the simulation
-        parameters. In the error free case this should be identical to x.dot(A) where A
-        is the numpy array programmed with set_matrix().
+        parameters. In the error free case this should be identical to ``x.dot(A)`` or
+        ``np.dot(x, A)`` where A is the numpy array programmed with set_matrix().
 
         Args:
             x: An N-D numpy-like array to be multiplied.
@@ -1057,11 +1122,11 @@ class AnalogCore:
 
     def __matmul__(self, other: npt.ArrayLike) -> npt.NDArray:
         other = xp.asarray(other)
-        return self.dot(other)
+        return self.matmul(other)
 
     def __rmatmul__(self, other: npt.ArrayLike) -> npt.NDArray:
         other = xp.asarray(other)
-        return self.rdot(other)
+        return self.rmatmul(other)
 
     def __repr__(self) -> str:
         prefix = "AnalogCore("

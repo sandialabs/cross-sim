@@ -106,7 +106,9 @@ class AnalogConvolution:
 
         if bias is not None and self.bias_rows:
             matrix[:, -self.bias_rows :] = np.repeat(
-                b / self.bias_rows, self.bias_rows, axis=0,
+                b / self.bias_rows,
+                self.bias_rows,
+                axis=0,
             ).reshape(self.shape[0], self.bias_rows)
 
         return matrix
@@ -182,7 +184,14 @@ class AnalogConvolution2D(AnalogConvolution):
         bias_rows: int,
     ) -> None:
         super().__init__(
-            params, Nic, Noc, kernel_size, stride, dilation, groups, bias_rows,
+            params,
+            Nic,
+            Noc,
+            kernel_size,
+            stride,
+            dilation,
+            groups,
+            bias_rows,
         )
 
     def apply_convolution_matvec(self, M_input: npt.ArrayLike) -> npt.NDArray:
@@ -391,7 +400,8 @@ class AnalogConvolution2D(AnalogConvolution):
 
         if self.bias_rows:
             M_input_all = xp.ones(
-                (Nbatch, self.core.shape[1], Nx_out * Ny_out), dtype=xp.float32,
+                (Nbatch, self.core.shape[1], Nx_out * Ny_out),
+                dtype=xp.float32,
             )
             M_input_all[:, : -self.bias_rows, :] = M_input
             M_input = M_input_all

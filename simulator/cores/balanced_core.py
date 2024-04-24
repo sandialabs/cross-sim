@@ -195,9 +195,9 @@ class BalancedCore(WrapperCore):
             if not self.interleaved_posneg:
                 if self.fast_balanced:
                     if op == "mvm":
-                        output = xp.dot(self.W_balanced, vector)
+                        output = xp.matmul(self.W_balanced, vector)
                     else:
-                        output = xp.dot(vector, self.W_balanced)
+                        output = xp.matmul(vector, self.W_balanced)
                 else:
                     output_pos = core_pos_operation()
                     output_neg = core_neg_operation()
@@ -243,9 +243,9 @@ class BalancedCore(WrapperCore):
                 if not self.interleaved_posneg:
                     if self.fast_balanced:
                         if op == "mvm":
-                            output_bal = xp.dot(self.W_balanced, vector_slices[k])
+                            output_bal = xp.matmul(self.W_balanced, vector_slices[k])
                         else:
-                            output_bal = xp.dot(vector_slices[k], self.W_balanced)
+                            output_bal = xp.matmul(vector_slices[k], self.W_balanced)
                     else:
                         output_pos = core_pos_operation(vector=vector_slices[k])
                         output_neg = core_neg_operation(vector=vector_slices[k])

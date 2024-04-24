@@ -228,18 +228,18 @@ class AnalogLinearGrad(Function):
         # Perform the operation using CrossSim
         if not (bias is not None and bias_rows):
             if x.ndim == 1:
-                out = from_dlpack(core.dot(x_.detach()))
+                out = from_dlpack(core.matmul(x_.detach()))
             else:
-                out = from_dlpack(core.dot(x_.detach().T).T)
+                out = from_dlpack(core.matmul(x_.detach().T).T)
             if bias is not None:
                 out += bias
         else:
             if x.ndim == 1:
                 x_aug = cat((x_, ones(bias_rows)))
-                out = from_dlpack(core.dot(x_aug.detach()))
+                out = from_dlpack(core.matmul(x_aug.detach()))
             else:
                 x_aug = cat((x_.T, ones((bias_rows, x_.shape[0]))))
-                out = from_dlpack(core.dot(x_aug.detach()).T)
+                out = from_dlpack(core.matmul(x_aug.detach()).T)
 
         # For inputs larget than 2D reshape back to the expected shape
         if x.ndim < 3:
