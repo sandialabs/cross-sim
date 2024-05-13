@@ -90,12 +90,14 @@ class OutputDType(IntEnum):
     "FLOAT64": Use backends float64 (xp.float64)
     "FLOAT16": Use backends float16 (xp.float16)
     """
+
     NATIVE = 1
     MATRIX = 2
     INPUT = 3
     FLOAT32 = 4
     FLOAT64 = 5
     FLOAT16 = 6
+
 
 @dataclass(repr=False)
 class CoreParameters(BaseParameters):

@@ -18,7 +18,7 @@ from __future__ import annotations
 from .layer import AnalogLayer
 
 from simulator import AnalogCore, CrossSimParameters
-from torch import Tensor, cat, ones, kron, from_dlpack
+from torch import Tensor, cat, ones, zeros, kron, from_dlpack
 from torch.nn import Linear, Parameter
 from torch.autograd import Function
 
@@ -54,6 +54,9 @@ class AnalogLinear(Linear, AnalogLayer):
             slice(in_features, in_features + bias_rows, 1),
         )
 
+        # Initialize the counter for input profiling
+        self.last_input = 0
+
         self.core = AnalogCore(self.form_matrix().detach(), self.params)
 
     def form_matrix(self) -> Tensor:
@@ -73,6 +76,18 @@ class AnalogLinear(Linear, AnalogLayer):
 
         See AnalogLinearGrad.forward for details.
         """
+
+        # Profile core inputs
+        if self.params.simulation.analytics.profile_xbar_inputs:
+            if self.last_input == 0:
+                self.xbar_inputs = zeros(
+                    (self.params.simulation.analytics.ntest, x.shape[1])
+                )
+            self.xbar_inputs[self.last_input : (self.last_input + x.shape[0]), ...] = (
+                x.detach().clone()
+            )
+            self.last_input += x.shape[0]
+
         return AnalogLinearGrad.apply(
             x,
             self.weight,

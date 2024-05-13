@@ -45,6 +45,7 @@ class BalancedCore(WrapperCore):
         self.dac_params = self.params.xbar.dac
         self.adc_params = self.params.xbar.adc
         self.input_params = self.params.core.mapping.inputs
+        self.analytics_params = self.params.simulation.analytics
         self.interleaved_posneg = self.params.core.balanced.interleaved_posneg
         self.subtract_current_in_xbar = (
             self.params.core.balanced.subtract_current_in_xbar
@@ -125,15 +126,7 @@ class BalancedCore(WrapperCore):
 
         # If profiling ADC inputs, initialize data structure here now that matrix dimensions are known
         # Currently assuming profiling is only done for MVMs
-        if self.params.simulation.analytics.profile_adc_inputs:
-            # This is to ensure accurate binning of column currents to specific MVMs
-            if (
-                self.params.simulation.convolution.x_par > 1
-                or self.params.simulation.convolution.y_par > 1
-            ):
-                raise ValueError(
-                    "If profiling bit slicing currents, must use x_par, y_par = 1",
-                )
+        if self.analytics_params.profile_adc_inputs:
             if self.dac_params.mvm.input_bitslicing:
                 magbits = self.params.xbar.dac.mvm.bits
                 if self.params.xbar.dac.mvm.signed:
@@ -143,19 +136,11 @@ class BalancedCore(WrapperCore):
             Nout_mvm = matrix.shape[0]
             if not self.subtract_current_in_xbar:
                 Nout_mvm *= 2
-            Nmvms = self.params.simulation.analytics.ntest
-            if self.params.simulation.convolution.is_conv_core:
-                Nmvms *= self.params.simulation.convolution.Nwindows
-            if (
-                self.params.simulation.convolution.conv_matmul
-                and self.params.simulation.convolution.is_conv_core
-            ):
-                self.outputs_per_op = (
-                    self.params.simulation.convolution.Nwindows * Nout_mvm
-                )
-            else:
-                self.outputs_per_op = Nout_mvm
+            Nmvms = self.analytics_params.ntest
+            # For convolutions, the size of the second dimension will be further scaled on the first
+            # mvm call, when the number of sliding windows per input is known
             self.adc_inputs = xp.zeros((magbits, Nmvms * Nout_mvm), dtype=xp.float32)
+            self.last_adc_input = 0
 
     def _wrapper_set_vmm_inputs(self, vector):
         vec_dac = self.dac.vmm.convert(vector)
@@ -188,6 +173,21 @@ class BalancedCore(WrapperCore):
         adc = getattr(self.adc, op)
         dac = getattr(self.dac, op)
 
+        # Update the dimensions of adc_inputs as soon as # windows is known
+        if (
+            self.analytics_params.profile_adc_inputs
+            and self.last_adc_input == 0
+            and self.params.simulation.convolution.is_conv_core
+        ):
+            self.adc_inputs = xp.zeros(
+                (
+                    self.adc_inputs.shape[0],
+                    self.adc_inputs.shape[1]
+                    * self.params.simulation.convolution.Nwindows,
+                ),
+                dtype=xp.float32,
+            )
+
         ################################
         ##  ANALOG INPUT ENCODING
         ################################
@@ -213,16 +213,19 @@ class BalancedCore(WrapperCore):
                 if self.clip_Icol:
                     output = output.clip(-self.Icol_max, self.Icol_max)
 
-            # ADC input profiling
-            if self.params.simulation.analytics.profile_adc_inputs:
-                i1 = self.i_op * self.outputs_per_op
-                i2 = i1 + self.outputs_per_op
+            # ADC input profiling (if not digitizing each input bit)
+            if self.analytics_params.profile_adc_inputs:
                 if self.subtract_current_in_xbar or self.interleaved_posneg:
+                    num_inputs = output.size
+                    i1 = self.last_adc_input
+                    i2 = self.last_adc_input + num_inputs
                     self.adc_inputs[0, i1:i2] = xp.array(
-                        output.flatten(),
-                        dtype=xp.float32,
+                        output.flatten(), dtype=xp.float32
                     )
                 else:
+                    num_inputs = 2 * output_pos.size
+                    i1 = self.last_adc_input
+                    i2 = self.last_adc_input + num_inputs
                     self.adc_inputs[0, i1:i2] = xp.array(
                         xp.concatenate((output_pos.flatten(), output_neg.flatten())),
                         dtype=xp.float32,
@@ -266,19 +269,23 @@ class BalancedCore(WrapperCore):
                     if self.clip_Icol:
                         output_bal = output_bal.clip(-self.Icol_max, self.Icol_max)
 
-                # Profiling of bit sliced array outputs
-                if self.params.simulation.analytics.profile_adc_inputs:
-                    i1 = self.i_op * self.outputs_per_op
-                    i2 = i1 + self.outputs_per_op
+                # Profiling of bit sliced ADC inputs
+                if self.analytics_params.profile_adc_inputs:
+
                     if self.subtract_current_in_xbar or self.interleaved_posneg:
+                        num_inputs = output_bal.size
+                        i1 = self.last_adc_input
+                        i2 = self.last_adc_input + num_inputs
                         self.adc_inputs[k, i1:i2] = xp.array(
-                            output_bal.flatten(),
-                            dtype=xp.float32,
+                            output_bal.flatten(), dtype=xp.float32
                         )
                     else:
+                        num_inputs = 2 * output_pos.size
+                        i1 = self.last_adc_input
+                        i2 = self.last_adc_input + num_inputs
                         self.adc_inputs[k, i1:i2] = xp.array(
                             xp.concatenate(
-                                (output_pos.flatten(), output_neg.flatten()),
+                                (output_pos.flatten(), output_neg.flatten())
                             ),
                             dtype=xp.float32,
                         )
@@ -333,6 +340,9 @@ class BalancedCore(WrapperCore):
                 )
 
         self.i_op += 1
+
+        if self.analytics_params.profile_adc_inputs:
+            self.last_adc_input += num_inputs
 
         # ADC conversion
         if self.subtract_current_in_xbar:

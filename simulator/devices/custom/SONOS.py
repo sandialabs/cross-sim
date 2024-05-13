@@ -54,9 +54,11 @@ class SONOS(EmptyDevice):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Convert xbar normalized conductances to real PCM conductances
         # Max SONOS current to use for weight storage
-        self.Imax = 1600.0  # nanoAmps
+        self.Gmin = 1 / self.device_params.Rmax
+        self.Gmax = 1 / self.device_params.Rmin
+        self.Imax = self.Gmax * self.device_params.Vread
+        self.Imax *= 1e9  # nanoAmps
         if self.on_off_ratio == 0:
             self.Imin = 0
         else:

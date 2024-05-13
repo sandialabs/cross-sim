@@ -356,3 +356,13 @@ def _enumerate_module(module: Module, types: KeysView | ValuesView) -> list[Modu
 
         convertible += _enumerate_module(child, types)
     return convertible
+
+
+def reinitialize(model: Module) -> None:
+    """Call reinitialize on all layers. Mainly used to re-sample random conductance errors
+
+    Args:
+        model: Torch module to synchronize weights.
+    """
+    for layer in analog_modules(model):
+        layer.reinitialize()

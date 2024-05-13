@@ -134,11 +134,14 @@ class AnalyticsParameters(BaseParameters):
     """Parameters for capturing analytics.
 
     Attributes:
+        profile_xbar_inputs (bool): Profile array digital inputs inside AnalogCore,
+            to be saved and used for optimal calibration of input ranges
         profile_adc_inputs (bool): Profile pre-ADC input values inside core, to be
             saved and used for optimal calibration of ADC ranges
         ntest (int): Number of images in dataset, used to allocate storage for ADC
             input profiling
     """
 
+    profile_xbar_inputs: bool = False
     profile_adc_inputs: bool = False
     ntest: int = 0

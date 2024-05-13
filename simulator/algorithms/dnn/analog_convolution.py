@@ -53,6 +53,10 @@ class AnalogConvolution:
         self.groups = groups
         self.bias_rows = bias_rows
 
+        # Initialize the counter for input profiling. The data container will be
+        # initialized in apply_convolution() where the # sliding windows is known
+        self.last_input = 0
+
         self._synchronize_params()
 
         self.core = AnalogCore(
@@ -64,6 +68,16 @@ class AnalogConvolution:
     def set_matrix(self, matrix: npt.ArrayLike, verbose=False) -> None:
         """ """
         self.core.set_matrix(matrix, verbose=verbose)
+
+        # Expand the cores if x_par or y_par > 1
+        Ncopy = (
+            self.params.simulation.convolution.x_par
+            * self.params.simulation.convolution.y_par
+        )
+        if Ncopy > 1:
+            for j in range(self.core.num_cores_row):
+                for k in range(self.core.num_cores_col):
+                    self.core.cores[j][k].expand_matrix(Ncopy)
 
     def get_matrix(self) -> npt.NDArray:
         """Read the internal matrix held by this core."""
@@ -139,6 +153,24 @@ class AnalogConvolution:
                 p.simulation.convolution.Nic = self.Nic
                 p.simulation.convolution.bias_row = self.bias_rows > 0
 
+    def _set_num_windows(self, Nwindows: int) -> None:
+        """
+        Set the derived parameter Nwindows on this object, its AnalogCore, and all subcores
+        """
+        # Set Nwindows on the params for this object and its AnalogCore
+        if isinstance(self.params, CrossSimParameters):
+            self.params.simulation.convolution.Nwindows = Nwindows
+            self.core.params.simulation.convolution.Nwindows = Nwindows
+        elif isinstance(self.params, list):
+            for p in self.params:
+                p.simulation.convolution.Nwindows = Nwindows
+            for p in self.core.params:
+                p.simulation.convolution.Nwindows = Nwindows
+        # Set Nwindows on the lower-level cores
+        for c in range(self.core.num_cores_col):
+            for r in range(self.core.num_cores_row):
+                self.core.cores[r][c].params.simulation.convolution.Nwindows = Nwindows
+
     # A few properties to pass through from AnalogCore so this can be treated
     # like an AnalogCore for manipulation and debugging purposes.
     @property
@@ -160,6 +192,14 @@ class AnalogConvolution:
     @property
     def cores(self):
         return self.core.cores
+
+    @property
+    def num_cores_row(self):
+        return self.core.num_cores_row
+
+    @property
+    def num_cores_col(self):
+        return self.core.num_cores_col
 
     def __setitem__(self, key, value):
         # When setting the weights directly the input may not be reshaped yet
@@ -243,6 +283,22 @@ class AnalogConvolution2D(AnalogConvolution):
             (M_input.shape[2] - Kx) // strideX + 1,
             (M_input.shape[3] - Ky) // strideY + 1,
         )
+
+        # Initialize data container and params for input and ADC profiling
+        if self.last_input == 0:
+            if self.params.simulation.analytics.profile_xbar_inputs:
+                self.xbar_inputs = xp.zeros(
+                    (self.params.simulation.analytics.ntest, Nic, Nx, Ny)
+                )
+            if self.params.simulation.analytics.profile_adc_inputs:
+                self._set_num_windows(Nx_out * Ny_out)
+
+        # Profile core inputs
+        if self.params.simulation.analytics.profile_xbar_inputs:
+            self.xbar_inputs[self.last_input : (self.last_input + Nbatch), ...] = (
+                M_input.copy()
+            )
+        self.last_input += Nbatch
 
         M_outs = [None] * Nbatch
         for b in range(Nbatch):
@@ -377,6 +433,22 @@ class AnalogConvolution2D(AnalogConvolution):
             (M_input.shape[2] - Kx) // strideX + 1,
             (M_input.shape[3] - Ky) // strideY + 1,
         )
+
+        # Initialize data container and params for input and ADC profiling
+        if self.last_input == 0:
+            if self.params.simulation.analytics.profile_xbar_inputs:
+                self.xbar_inputs = xp.zeros(
+                    (self.params.simulation.analytics.ntest, Nic, Nx, Ny)
+                )
+            if self.params.simulation.analytics.profile_adc_inputs:
+                self._set_num_windows(Nx_out * Ny_out)
+
+        # Profile core inputs
+        if self.params.simulation.analytics.profile_xbar_inputs:
+            self.xbar_inputs[self.last_input : (self.last_input + Nbatch), ...] = (
+                M_input.copy()
+            )
+        self.last_input += Nbatch
 
         if Kx == 1 and Ky == 1:
             M_input = M_input[:, :, ::strideX, ::strideY]

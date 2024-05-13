@@ -310,5 +310,6 @@ class NumericCore(ICore, metaclass=ABCMeta):
 
     def unexpand_matrix(self):
         """Undo the expansion operation in expand_matrix."""
-        self.matrix = self.matrix_original.copy()
-        self.matrix_dense = None
+        if hasattr(self, "matrix_original"):
+            self.matrix = self.matrix_original.copy()
+            self.matrix_dense = None
