@@ -3,12 +3,10 @@ Parameterizable inference simulation script for CIFAR-10 ResNets.
 """
 
 import torch
-from torchvision import datasets
-from torchvision import transforms
+from torchvision import datasets, transforms
 import numpy as np
 import warnings, sys, time
 from build_resnet_cifar10 import ResNet_cifar10
-from torch.utils.data import DataLoader
 warnings.filterwarnings('ignore')
 sys.path.append("../") # to import dnn_inference_params
 sys.path.append("../../../../") # to import simulator
@@ -17,12 +15,22 @@ from simulator.algorithms.dnn.torch.convert import from_torch, convertible_modul
 from find_adc_range import find_adc_range
 from dnn_inference_params import dnn_inference_params
 
+## Depth parameter for model selection
+# Follows definition in original ResNet paper (He et al, CVPR 2016)
+# n = 2 : ResNet-14 (175K weights)
+# n = 3 : ResNet-20 (272K weights)
+# n = 5 : ResNet-32 (467K weights)
+# n = 9 : ResNet-56 (856K weights)
+n = 3
+
 useGPU = True # use GPU?
 N = 10000 # number of images
 batch_size = 64
 Nruns = 1
 print_progress = True
 
+depth = 6*n+2
+print("Model: ResNet-{:d}".format(depth))
 print("CIFAR-10: using "+("GPU" if useGPU else "CPU"))
 print("Number of images: {:d}".format(N))
 print("Number of runs: {:d}".format(Nruns))
@@ -30,13 +38,13 @@ print("Batch size: {:d}".format(batch_size))
 device = torch.device("cuda:0" if (torch.cuda.is_available() and useGPU) else "cpu")
 
 ##### Load Pytorch model
-n = 3 # This creates ResNet20
-resnet20_model = ResNet_cifar10(n)
-resnet20_model = resnet20_model.to(device)
-resnet20_model.load_state_dict(torch.load('resnet20_cifar10.pth',
+resnet_model = ResNet_cifar10(n)
+resnet_model = resnet_model.to(device)
+resnet_model.load_state_dict(
+    torch.load('./models/resnet{:d}_cifar10.pth'.format(depth),
     map_location=torch.device(device)))
-resnet20_model.eval()
-n_layers = len(convertible_modules(resnet20_model))
+resnet_model.eval()
+n_layers = len(convertible_modules(resnet_model))
 
 ##### Set the simulation parameters
 
@@ -88,15 +96,15 @@ base_params_args = {
     }
 
 ### Load input limits
-input_ranges = np.load("./calibrated_config/input_limits_ResNet20.npy")
+input_ranges = np.load("./calibrated_config/input_limits_ResNet{:d}.npy".format(depth))
 
 ### Load ADC limits
-adc_ranges = find_adc_range(base_params_args, n_layers)
+adc_ranges = find_adc_range(base_params_args, n_layers, depth)
 
 ### Load (x_par, y_par) values
-xy_pars = np.load("./calibrated_config/resnet20_xy.npy")
+xy_pars = np.load("./calibrated_config/resnet{:d}_xy.npy".format(depth))
 if base_params_args['Rp_row'] > 0 or base_params_args['Rp_col'] > 0:
-    xy_pars = np.load("./calibrated_config/resnet20_xy_parasitics.npy")
+    xy_pars = np.load("./calibrated_config/resnet{:d}_xy_parasitics.npy".format(depth))
 
 ### Set the parameters
 for k in range(n_layers):
@@ -109,7 +117,7 @@ for k in range(n_layers):
     params_list[k] = dnn_inference_params(**params_args_k)
 
 #### Convert PyTorch layers to analog layers
-analog_resnet20 = from_torch(resnet20_model, params_list, fuse_batchnorm=True, bias_rows=0)
+analog_resnet = from_torch(resnet_model, params_list, fuse_batchnorm=True, bias_rows=0)
 
 #### Load and transform CIFAR-10 dataset
 normalize = transforms.Normalize(
@@ -128,7 +136,7 @@ for m in range(Nruns):
     y_pred, y, k = np.zeros(N), np.zeros(N), 0
     for inputs, labels in cifar10_dataloader:
         inputs = inputs.to(device)
-        output = analog_resnet20(inputs)
+        output = analog_resnet(inputs)
         output = output.to(device)
         y_pred_k = output.data.cpu().detach().numpy()
         if batch_size == 1:
@@ -150,7 +158,7 @@ for m in range(Nruns):
     print("\nInference finished. Elapsed time: {:.3f} sec".format(T2-T1))
     print('Accuracy: {:.2f}% ({:d}/{:d})\n'.format(top1*100,int(top1*N),N))
     if m < (Nruns - 1):
-        reinitialize(analog_resnet20)
+        reinitialize(analog_resnet)
 
 if Nruns > 1:
     print("==========")

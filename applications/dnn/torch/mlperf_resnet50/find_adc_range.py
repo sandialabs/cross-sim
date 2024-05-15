@@ -12,9 +12,9 @@ def find_adc_range(params_args, n_layers):
     adc_bits = params_args['adc_bits']
     style = params_args['core_style']
     NrowsMax = params_args['NrowsMax']
-    ADC_per_ibit = (params_args['input_bitslicing'] 
+    adc_per_ibit = (params_args['input_bitslicing'] 
         and params_args['input_slice_size'] == 1
-        and params_args['ADC_per_ibit'])
+        and params_args['adc_per_ibit'])
     Nslices = params_args['Nslices']
     subtract_current_in_xbar = (params_args['subtract_current_in_xbar'] or 
         params_args['interleaved_posneg'])
@@ -37,28 +37,28 @@ def find_adc_range(params_args, n_layers):
     if adc_bits > 0 and adc_range_option == "CALIBRATED":
 
         if Nslices == 1:
-            if style == "BALANCED" and NrowsMax >= 1152 and not ADC_per_ibit and subtract_current_in_xbar:
+            if style == "BALANCED" and NrowsMax >= 1152 and not adc_per_ibit and subtract_current_in_xbar:
                 adc_ranges = np.load(limits_dir+"adc_limits_ResNet50v15_balanced.npy")
 
-            elif style == "OFFSET" and NrowsMax >= 1152 and ADC_per_ibit:
+            elif style == "OFFSET" and NrowsMax >= 1152 and adc_per_ibit:
                 adc_ranges = np.load(limits_dir+"adc_limits_ResNet50v15_offset.npy")
 
-            elif style == "BALANCED" and NrowsMax == 144 and not ADC_per_ibit and subtract_current_in_xbar:
+            elif style == "BALANCED" and NrowsMax == 144 and not adc_per_ibit and subtract_current_in_xbar:
                 adc_ranges = np.load(limits_dir+"adc_limits_ResNet50v15_balanced_144rows.npy")
 
-            elif style == "BALANCED" and NrowsMax == 1152 and ADC_per_ibit and subtract_current_in_xbar:
+            elif style == "BALANCED" and NrowsMax == 1152 and adc_per_ibit and subtract_current_in_xbar:
                 adc_ranges = np.load(limits_dir+"adc_limits_ResNet50v15_balanced_ibits.npy")
 
         else:
             try:
-                if style == "BALANCED" and not ADC_per_ibit and subtract_current_in_xbar:
+                if style == "BALANCED" and not adc_per_ibit and subtract_current_in_xbar:
                     adc_ranges = np.load(limits_dir+"adc_limits_ResNet50v15_"+str(NrowsMax)+"rows_"+str(Nslices)+"slices_balanced.npy")
-                elif style == "OFFSET" and ADC_per_ibit:
+                elif style == "OFFSET" and adc_per_ibit:
                     adc_ranges = np.load(limits_dir+"adc_limits_ResNet50v15_"+str(NrowsMax)+"rows_"+str(Nslices)+"slices_offset.npy")
                 else:
-                    raise ValueError("No calibrated ADC range found for the combination of crossbar style, ADC_per_ibit and # slices")
+                    raise ValueError("No calibrated ADC range found for the combination of crossbar style, adc_per_ibit and # slices")
             except FileNotFoundError:
-                raise ValueError("No calibrated ADC range found for the combination of crossbar style, ADC_per_ibit and # slices")
+                raise ValueError("No calibrated ADC range found for the combination of crossbar style, adc_per_ibit and # slices")
 
         if adc_ranges[0] is None:
             raise ValueError("For the chosen crossbar settings, calibrated ADC ranges are unavailable for ResNet50-v1.5: "+\

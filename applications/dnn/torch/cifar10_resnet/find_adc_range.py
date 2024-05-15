@@ -1,6 +1,6 @@
 import numpy as np
 
-def find_adc_range(params_args, n_layers):
+def find_adc_range(params_args, n_layers, depth):
     """
     Given a set of arguments to dnn_inference_params(), find a compatible set
     of calibrated ADC ranges. If a calibrated range does not exist, this function
@@ -12,9 +12,9 @@ def find_adc_range(params_args, n_layers):
     adc_bits = params_args['adc_bits']
     style = params_args['core_style']
     NrowsMax = params_args['NrowsMax']
-    ADC_per_ibit = (params_args['input_bitslicing'] 
+    adc_per_ibit = (params_args['input_bitslicing'] 
         and params_args['input_slice_size'] == 1
-        and params_args['ADC_per_ibit'])
+        and params_args['adc_per_ibit'])
     Nslices = params_args['Nslices']
     subtract_current_in_xbar = (params_args['subtract_current_in_xbar'] or 
         params_args['interleaved_posneg'])
@@ -37,16 +37,16 @@ def find_adc_range(params_args, n_layers):
     if adc_bits > 0 and adc_range_option == "CALIBRATED":
 
         if Nslices == 1:
-            if style == "BALANCED" and NrowsMax >= 576 and not ADC_per_ibit and subtract_current_in_xbar:
-                adc_ranges = np.load(limits_dir+"adc_limits_ResNet20_balanced.npy")
+            if style == "BALANCED" and NrowsMax >= 576 and not adc_per_ibit and subtract_current_in_xbar:
+                adc_ranges = np.load(limits_dir+"adc_limits_ResNet{:d}_balanced.npy".format(depth))
 
-            elif style == "BALANCED" and NrowsMax >= 576 and ADC_per_ibit and subtract_current_in_xbar:
-                adc_ranges = np.load(limits_dir+"adc_limits_ResNet20_balanced_ibits.npy")
+            elif style == "BALANCED" and NrowsMax >= 576 and adc_per_ibit and subtract_current_in_xbar:
+                adc_ranges = np.load(limits_dir+"adc_limits_ResNet{:d}_balanced_ibits.npy".format(depth))
 
-            elif style == "OFFSET" and NrowsMax >= 576 and ADC_per_ibit:
-                adc_ranges = np.load(limits_dir+"adc_limits_ResNet20_offset.npy")
+            elif style == "OFFSET" and NrowsMax >= 576 and adc_per_ibit:
+                adc_ranges = np.load(limits_dir+"adc_limits_ResNet{:d}_offset.npy".format(depth))
         else:
-            raise ValueError("No calibrated ADC range found for the combination of crossbar style, ADC_per_ibit and # slices")
+            raise ValueError("No calibrated ADC range found for the combination of crossbar style, adc_per_ibit and # slices")
 
         if adc_ranges[0] is None:
             raise ValueError("For the chosen crossbar settings, calibrated ADC ranges are unavailable for this network: "+\
