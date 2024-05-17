@@ -19,7 +19,7 @@ from warnings import warn
 from simulator.algorithms.dnn.torch.conv import AnalogConv2d
 from simulator.algorithms.dnn.torch.linear import AnalogLinear
 
-from typing import KeysView, ValuesView
+from typing import Callable
 
 _conversion_map = {
     Linear: AnalogLinear,
@@ -173,12 +173,14 @@ def convertible_modules(model: Module) -> list[Module]:
     Returns:
         List of all layers in the model which have a CrossSim version.
     """
-    # Currently no convertible layers can have children so just bail out early
-    # if the model is actually convertible
+    out = []
     if type(model) in _conversion_map:
-        return [model]
+        out += [model]
 
-    return _enumerate_module(model, _conversion_map.keys())
+    return out + _enumerate_module(
+        model,
+        lambda module: type(module) in _conversion_map,
+    )
 
 
 def analog_modules(model: Module) -> list[Module]:
@@ -190,12 +192,33 @@ def analog_modules(model: Module) -> list[Module]:
     Returns:
         List of all layers in the model which use CrossSim.
     """
-    # Currently no analog layers can have children so just bail out early
-    # if the model is actually analog
+    out = []
     if type(model) in _conversion_map.values():
-        return [model]
+        out += [model]
 
-    return _enumerate_module(model, _conversion_map.values())
+    return out + _enumerate_module(
+        model,
+        lambda module: type(module) in _conversion_map.values(),
+    )
+
+
+def inconvertible_modules(model: Module) -> list[Module]:
+    """Returns a list of layers in a model without CrossSim equivalents.
+
+    Args:
+        model: Torch module to examine.
+
+    Returns:
+        List of all layers in the model which do not have a CrossSim version.
+    """
+    out = []
+    if type(model) not in _conversion_map:
+        out += [model]
+
+    return out + _enumerate_module(
+        model,
+        lambda module: type(module) not in _conversion_map,
+    )
 
 
 def synchronize(model: Module) -> None:
@@ -210,6 +233,16 @@ def synchronize(model: Module) -> None:
     """
     for layer in analog_modules(model):
         layer.synchronize()
+
+
+def reinitialize(model: Module) -> None:
+    """Call reinitialize on all layers. Mainly used to re-sample random conductance errors
+
+    Args:
+        model: Torch module to synchronize weights.
+    """
+    for layer in analog_modules(model):
+        layer.reinitialize()
 
 
 def _convert_children_from_torch(
@@ -347,22 +380,20 @@ def _fuse_module_bn(module: Module):
             delattr(module, child)
 
 
-def _enumerate_module(module: Module, types: KeysView | ValuesView) -> list[Module]:
-    convertible = []
+def _enumerate_module(
+    module: Module,
+    condition: Callable[
+        [
+            Module,
+        ],
+        bool,
+    ],
+) -> list[Module]:
+    match_list = []
 
     for _, child in module.named_children():
-        if type(child) in types:
-            convertible.append(child)
+        if condition(child):
+            match_list.append(child)
 
-        convertible += _enumerate_module(child, types)
-    return convertible
-
-
-def reinitialize(model: Module) -> None:
-    """Call reinitialize on all layers. Mainly used to re-sample random conductance errors
-
-    Args:
-        model: Torch module to synchronize weights.
-    """
-    for layer in analog_modules(model):
-        layer.reinitialize()
+        match_list += _enumerate_module(child, condition)
+    return match_list

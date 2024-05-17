@@ -210,6 +210,13 @@ class AnalogConvolution:
             value_ = value
         self.core.__setitem__(key, value_)
 
+    def apply_convolution_matvec(self, M_input: npt.ArrayLike) -> npt.NDArray:
+        raise NotImplementedError("AnalogConvolution does not implement"
+            "apply_convolution functions, use AnalogConvolution[1,2,3]D instead.")
+
+    def apply_convolution_matmul(self, M_input: npt.ArrayLike) -> npt.NDArray:
+        raise NotImplementedError("AnalogConvolution does not implement"
+            "apply_convolution functions, use AnalogConvolution[1,2,3]D instead.")
 
 class AnalogConvolution2D(AnalogConvolution):
     def __init__(

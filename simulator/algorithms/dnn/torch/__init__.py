@@ -14,5 +14,6 @@ from .convert import (
     from_torch,
     convertible_modules,
     analog_modules,
+    inconvertible_modules,
     synchronize,
 )

@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from .layer import AnalogLayer
 
+from math import prod
+
 from simulator import CrossSimParameters
 from simulator.algorithms.dnn.analog_convolution import (
     AnalogConvolution,
@@ -24,29 +26,33 @@ from simulator.algorithms.dnn.analog_convolution import (
 )
 from torch import Tensor, zeros, arange, from_dlpack
 from torch.nn import Conv2d, Parameter
+from torch.nn.modules.conv import _ConvNd
 from torch.nn.functional import pad
 from torch.autograd import Function
 from torch import ops
 
 
-class AnalogConv2d(Conv2d, AnalogLayer):
-    """ """
+class _AnalogConvNd(_ConvNd, AnalogLayer):
 
     def __init__(
         self,
         params: CrossSimParameters,
-        # Base Conv2D layer arguments
+        # Base ConvNd layer arguments
         in_channels: int,
         out_channels: int,
-        kernel_size: int | tuple[int, int],
-        stride: int | tuple[int, int] = 1,
-        padding: str | int | tuple[int, int] = 0,
-        dilation: int | tuple[int, int] = 1,
-        groups: int = 1,
-        bias: bool = True,
-        padding_mode: str = "zeros",
+        # Need int | tuple because this is called before the torch.nn.ConvXd
+        # init which handles converting into tuples and error checking
+        kernel_size: int | tuple[int, ...],
+        stride: int | tuple[int, ...],
+        padding: str | int | tuple[int, ...],
+        dilation: int | tuple[int, ...],
+        # skip transposed for now
+        # skip output_padding for now
+        groups: int,
+        bias: bool,
+        padding_mode: str,
         # Additional arguments for AnalogConv2d
-        bias_rows: int = 0,
+        bias_rows: int,
     ) -> None:
         """ """
         # TODO: Do we need to handle device and dtype
@@ -64,8 +70,7 @@ class AnalogConv2d(Conv2d, AnalogLayer):
 
         # Torch has already handled base incompatibilities
         # Check for CrossSim-specific ones
-
-        if self.dilation[0] != 1 or self.dilation[1] != 1:
+        if any(d > 1 for d in self.dilation):
             raise NotImplementedError(
                 "AnalogConv2d does not support dilated convolutions",
             )
@@ -79,14 +84,14 @@ class AnalogConv2d(Conv2d, AnalogLayer):
 
         self.weight_mask = (
             slice(0, out_channels, 1),
-            slice(0, self.kernel_size[0] * self.kernel_size[1] * in_channels, 1),
+            slice(0, prod(self.kernel_size) * in_channels, 1),
         )
         self.bias_mask = (
             slice(None, None, 1),
             slice(self.weight_mask[1].stop, self.weight_mask[1].stop + bias_rows, 1),
         )
 
-        self.core = AnalogConvolution2D(
+        self.core = self.core_func(
             self.params,
             self.in_channels,
             self.out_channels,
@@ -100,59 +105,12 @@ class AnalogConv2d(Conv2d, AnalogLayer):
 
     def form_matrix(self) -> Tensor:
         """ """
-        # AnalogConvolution expects weight matrices with the order
-        # (Kx, Ky, Nic, Noc), torch uses (Noc, Nic, Kx, Ky)
         # Intentionally moving this onto the CPU
         weight_ = self.weight.detach().cpu()
         if self.analog_bias:
             return from_dlpack(self.core.form_matrix(weight_, self.bias.detach().cpu()))
         else:
             return from_dlpack(self.core.form_matrix(weight_))
-
-    def forward(self, x: Tensor) -> Tensor:
-        """AnalogConv2d forward operation.
-
-        See AnalogConvGrad.forward for details.
-        """
-        # Use the same padding logic as torch.nn.Conv2d.
-        # https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/conv.py#L453
-        # Special-casing zeros just because pad expects "constant" not "zeros"
-
-        if self.padding_mode != "zeros":
-            x_ = pad(x, self._reversed_padding_repeated_twice, self.padding_mode)
-        else:
-            x_ = pad(x, self._reversed_padding_repeated_twice)
-
-        # Now use x_ to set Nwindows
-        # This is dangerous because params can be copied so the params object
-        # won't be reflected but all current uses of Nwindows refer to the
-        # object directly.
-        # Still, be very careful with this pattern, its kind of a hack
-        if self.padding == "same":
-            Nox, Noy = x_.shape[0] // self.stride[0], x_.shape[1] // self.stride[1]
-        else:
-            Nox = 1 + (x_.shape[0] - self.kernel_size[0]) // self.stride[0]
-            Noy = 1 + (x_.shape[1] - self.kernel_size[1]) // self.stride[1]
-
-        for row_list in self.core.cores:
-            for core in row_list:
-                core.params.simulation.convolution.Nwindows = Nox * Noy
-
-        out = AnalogConvGrad.apply(
-            x_,
-            self.weight,
-            self.bias,
-            self.core,
-            self.bias_rows,
-            self.stride,
-            # Since we already padded here, we can simply set padding to (0,0)
-            (0, 0),
-            self.dilation,
-            self.output_padding,
-            self.groups,
-        )
-
-        return out
 
     def get_core_weights(self):
         """Returns weight and biases with programming errors."""
@@ -161,9 +119,7 @@ class AnalogConv2d(Conv2d, AnalogLayer):
             weight = matrix[self.weight_mask].reshape(self.weight.shape)
         else:
             weight = zeros(self.weight.shape)
-            weights_per_out = (
-                self.weight.shape[1] * self.weight.shape[2] * self.weight.shape[3]
-            )
+            weights_per_out = prod(self.weight.shape[1:])
             outs_per_group = self.out_channels // self.groups
             for i in range(self.out_channels):
                 group = i // outs_per_group
@@ -189,7 +145,7 @@ class AnalogConv2d(Conv2d, AnalogLayer):
         self.analog_bias = self.bias is not None and self.bias_rows > 0
 
         # Shape might have changed need to call form_matrix again.
-        self.core = AnalogConvolution2D(
+        self.core = self.core_func(
             self.params,
             self.in_channels,
             self.out_channels,
@@ -264,6 +220,92 @@ class AnalogConv2d(Conv2d, AnalogLayer):
             torch_layer.bias = Parameter(b)
 
         return torch_layer
+
+
+# _AnalogConvNd listed first to allow it to handle params and bias_rows
+class AnalogConv2d(_AnalogConvNd, Conv2d):
+    """ """
+
+    core_func = AnalogConvolution2D
+
+    def __init__(
+        self,
+        params: CrossSimParameters,
+        # Base Conv2D layer arguments
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int | tuple[int, int],
+        stride: int | tuple[int, int] = 1,
+        padding: str | int | tuple[int, int] = 0,
+        dilation: int | tuple[int, int] = 1,
+        groups: int = 1,
+        bias: bool = True,
+        padding_mode: str = "zeros",
+        # Additional arguments for AnalogConv2d
+        bias_rows: int = 0,
+    ) -> None:
+        """ """
+        # TODO: Do we need to handle device and dtype
+        super().__init__(
+            params,
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride,
+            padding,
+            dilation,
+            groups,
+            bias,
+            padding_mode,
+            bias_rows,
+        )
+
+    # Probably could be moved to ConvNd once the stuff around setting Nwindows
+    # is removed.
+    def forward(self, x: Tensor) -> Tensor:
+        """AnalogConv2d forward operation.
+
+        See AnalogConvGrad.forward for details.
+        """
+        # Use the same padding logic as torch.nn.Conv2d.
+        # https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/conv.py#L453
+        # Special-casing zeros just because pad expects "constant" not "zeros"
+
+        if self.padding_mode != "zeros":
+            x_ = pad(x, self._reversed_padding_repeated_twice, self.padding_mode)
+        else:
+            x_ = pad(x, self._reversed_padding_repeated_twice)
+
+        # Now use x_ to set Nwindows
+        # This is dangerous because params can be copied so the params object
+        # won't be reflected but all current uses of Nwindows refer to the
+        # object directly.
+        # Still, be very careful with this pattern, its kind of a hack
+        if self.padding == "same":
+            Nox, Noy = x_.shape[0] // self.stride[0], x_.shape[1] // self.stride[1]
+        else:
+            Nox = 1 + (x_.shape[0] - self.kernel_size[0]) // self.stride[0]
+            Noy = 1 + (x_.shape[1] - self.kernel_size[1]) // self.stride[1]
+
+        for row_list in self.core.cores:
+            for core in row_list:
+                core.params.simulation.convolution.Nwindows = Nox * Noy
+
+        out = AnalogConvGrad.apply(
+            x_,
+            self.weight,
+            self.bias,
+            self.core,
+            self.bias_rows,
+            self.stride,
+            # Since we already padded here, we can simply set padding to (0,0)
+            (0, 0),
+            self.dilation,
+            self.output_padding,
+            self.groups,
+        )
+
+        return out
 
 
 class AnalogConvGrad(Function):

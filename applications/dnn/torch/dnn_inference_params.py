@@ -4,20 +4,21 @@ from simulator import CrossSimParameters
 
 def dnn_inference_params(**kwargs):
     """
-    Pass parameters using kwargs to allow for a general parameter dict to be used
-    This function should be called before train and sets all parameters of the neural
-    core simulator
+    Pass parameters using kwargs to allow for a general parameter dict
+    to be used. This function should be called before train and sets all
+    parameters of the neural core simulator
 
-    If ideal=True, parameters for an ideal, floating-point simulation will be returned,
-    ignoring most other settings.
+    If ideal=True, parameters for an ideal, floating-point simulation will
+    be returned, ignoring most other settings.
 
-    For the meanings of the various parameters, please see the corresponding files in
-    /simulation/parameters/
+    For the meanings of the various parameters, please see the corresponding
+    files in /simulation/parameters/
 
     :return: params, a parameter object with all the settings
 
     """
     #######################
+
     #### load relevant parameters from arg dict
     ideal = kwargs.get("ideal",False)
     core_style = kwargs.get("core_style","BALANCED")
@@ -34,11 +35,11 @@ def dnn_inference_params(**kwargs):
 
     Rp_row = kwargs.get("Rp_row",0)
     Rp_col = kwargs.get("Rp_col",0)
-
     NrowsMax = kwargs.get("NrowsMax",None)
     NcolsMax = kwargs.get("NcolsMax",None)
     weight_bits = kwargs.get("weight_bits",0)
     weight_percentile = kwargs.get("weight_percentile",100)
+
     adc_bits = kwargs.get("adc_bits",8)
     input_bits = kwargs.get("input_bits",8)
     input_range = kwargs.get("input_range",(0,1))
@@ -64,6 +65,7 @@ def dnn_inference_params(**kwargs):
     conv_matmul = kwargs.get("conv_matmul",True)
     useGPU = kwargs.get("useGPU",False)
     gpu_id = kwargs.get("gpu_id",0)
+    disable_fast_balanced = kwargs.get("disable_fast_balanced",False)
 
     profile_xbar_inputs = kwargs.get("profile_xbar_inputs",False)
     profile_adc_inputs = kwargs.get("profile_adc_inputs",False)
@@ -102,6 +104,9 @@ def dnn_inference_params(**kwargs):
     params.simulation.convolution.x_par = int(x_par) # Number of sliding window steps to do in parallel (x)
     params.simulation.convolution.y_par = int(y_par) # Number of sliding window steps to do in parallel (y)
     params.simulation.convolution.conv_matmul = conv_matmul
+    
+    if core_style == "BALANCED":
+        params.simulation.disable_fast_balanced = disable_fast_balanced
 
     if ideal:
         return params
