@@ -1,6 +1,6 @@
 __pycache__/
 .hypothesis/
-
+.ipynb_checkpoints/
 .pytest_cache/
 *.py[cod]
 *$py.class
