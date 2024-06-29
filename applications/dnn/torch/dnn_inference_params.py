@@ -319,7 +319,10 @@ def dnn_inference_params(**kwargs):
                 else:
                     params.xbar.adc.mvm.calibrated_range = adc_range
                     if adc_type == "generic":
-                        params.xbar.adc.mvm.model = "QuantizerADC"
+                        absmax = np.max(np.abs(adc_range))
+                        params.xbar.adc.mvm.calibrated_range = np.array([-absmax,absmax])                        
+                        params.xbar.adc.mvm.model = "SignMagnitudeADC"
+                        #params.xbar.adc.mvm.model = "QuantizerADC"
 
             elif adc_range_option == "MAX" or adc_range_option == "GRANULAR":
                 if params.xbar.adc.mvm.signed and adc_type == "generic":

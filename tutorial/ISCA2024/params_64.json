@@ -1,0 +1,152 @@
+{
+    "core": {
+        "style": 1,
+        "rows_max": 64,
+        "cols_max": 64,
+        "weight_bits": 0,
+        "complex_matrix": false,
+        "complex_input": false,
+        "output_dtype": 1,
+        "balanced": {
+            "style": 1,
+            "interleaved_posneg": false,
+            "subtract_current_in_xbar": true
+        },
+        "bit_sliced": {
+            "style": 1,
+            "num_slices": 2
+        },
+        "offset": {
+            "style": 1
+        },
+        "mapping": {
+            "weights": {
+                "clipping": true,
+                "min": null,
+                "max": null,
+                "percentile": 1.0,
+                "row_partition_priority": [],
+                "col_partition_priority": [],
+                "row_partition_strategy": 2,
+                "col_partition_strategy": 2
+            },
+            "inputs": {
+                "_match": true,
+                "mvm": {
+                    "clipping": false,
+                    "min": 0.0,
+                    "max": 1.0,
+                    "percentile": null
+                },
+                "vmm": {
+                    "clipping": false,
+                    "min": 0.0,
+                    "max": 1.0,
+                    "percentile": null
+                }
+            }
+        }
+    },
+    "simulation": {
+        "convolution": {
+            "is_conv_core": false,
+            "stride": 1,
+            "Kx": 3,
+            "Ky": 3,
+            "Noc": 1,
+            "Nic": 1,
+            "x_par": 1,
+            "y_par": 1,
+            "weight_reorder": false,
+            "conv_matmul": true,
+            "bias_row": false,
+            "Nwindows": 1
+        },
+        "analytics": {
+            "profile_xbar_inputs": false,
+            "profile_adc_inputs": false,
+            "ntest": 0
+        },
+        "useGPU": false,
+        "gpu_id": 0,
+        "Niters_max_parasitics": 100,
+        "Verr_th_mvm": 0.0002,
+        "relaxation_gamma": 0.9,
+        "disable_fast_balanced": false,
+        "disable_fast_matmul": false,
+        "hide_convergence_msg": false
+    },
+    "xbar": {
+        "device": {
+            "cell_bits": -1,
+            "Rmin": 1000.0,
+            "Rmax": 1000000.0,
+            "Vread": 0.1,
+            "time": 0,
+            "infinite_on_off_ratio": false,
+            "clip_conductance": false,
+            "read_noise": {
+                "enable": false,
+                "model": "IdealDevice",
+                "magnitude": 0
+            },
+            "programming_error": {
+                "enable": false,
+                "model": "IdealDevice",
+                "magnitude": 0
+            },
+            "drift_error": {
+                "enable": false,
+                "model": "IdealDevice",
+                "magnitude": 0
+            }
+        },
+        "array": {
+            "Icol_max": 1000000.0,
+            "parasitics": {
+                "enable": true,
+                "Rp_row": 5e-05,
+                "Rp_col": 5e-05,
+                "gate_input": false
+            }
+        },
+        "adc": {
+            "_match": true,
+            "mvm": {
+                "model": "IdealADC",
+                "bits": 0,
+                "signed": true,
+                "stochastic_rounding": false,
+                "adc_per_ibit": false,
+                "calibrated_range": null,
+                "adc_range_option": 1
+            },
+            "vmm": {
+                "model": "IdealADC",
+                "bits": 0,
+                "signed": true,
+                "stochastic_rounding": false,
+                "adc_per_ibit": false,
+                "calibrated_range": null,
+                "adc_range_option": 1
+            }
+        },
+        "dac": {
+            "_match": true,
+            "mvm": {
+                "model": "QuantizerDAC",
+                "bits": 0,
+                "input_bitslicing": false,
+                "signed": false,
+                "slice_size": 1
+            },
+            "vmm": {
+                "model": "QuantizerDAC",
+                "bits": 0,
+                "input_bitslicing": false,
+                "signed": false,
+                "slice_size": 1
+            }
+        }
+    }
+}
