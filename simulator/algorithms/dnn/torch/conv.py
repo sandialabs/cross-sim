@@ -22,10 +22,12 @@ from math import prod
 from simulator import CrossSimParameters
 from simulator.algorithms.dnn.analog_convolution import (
     AnalogConvolution,
+    AnalogConvolution1D,
     AnalogConvolution2D,
+    AnalogConvolution3D
 )
-from torch import Tensor, zeros, arange, from_dlpack
-from torch.nn import Conv2d, Parameter
+from torch import Tensor, zeros, from_dlpack
+from torch.nn import Conv1d, Conv2d, Conv3d, Parameter
 from torch.nn.modules.conv import _ConvNd
 from torch.nn.functional import pad
 from torch.autograd import Function
@@ -72,7 +74,7 @@ class _AnalogConvNd(_ConvNd, AnalogLayer):
         # Check for CrossSim-specific ones
         if any(d > 1 for d in self.dilation):
             raise NotImplementedError(
-                "AnalogConv2d does not support dilated convolutions",
+                "AnalogConv*d does not support dilated convolutions",
             )
 
         self.params = params.copy()
@@ -111,6 +113,36 @@ class _AnalogConvNd(_ConvNd, AnalogLayer):
             return from_dlpack(self.core.form_matrix(weight_, self.bias.detach().cpu()))
         else:
             return from_dlpack(self.core.form_matrix(weight_))
+
+    def forward(self, x: Tensor) -> Tensor:
+        """AnalogConv2d forward operation.
+
+        See AnalogConvGrad.forward for details.
+        """
+        # Use the same padding logic as torch.nn.Conv2d.
+        # https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/conv.py#L453
+        # Special-casing zeros just because pad expects "constant" not "zeros"
+
+        if self.padding_mode != "zeros":
+            x_ = pad(x, self._reversed_padding_repeated_twice, self.padding_mode)
+        else:
+            x_ = pad(x, self._reversed_padding_repeated_twice)
+
+        out = AnalogConvGrad.apply(
+            x_,
+            self.weight,
+            self.bias,
+            self.core,
+            self.bias_rows,
+            self.stride,
+            # Since we already padded here, we can simply set padding to zeros
+            self._foward_padding,
+            self.dilation,
+            self.output_padding,
+            self.groups,
+        )
+
+        return out
 
     def get_core_weights(self):
         """Returns weight and biases with programming errors."""
@@ -193,7 +225,7 @@ class _AnalogConvNd(_ConvNd, AnalogLayer):
                 Bool indicating whether the torch layer should have ideal or
                 weights with programming error applied.
         """
-        torch_layer = Conv2d(
+        torch_layer = cls.__bases__[1](
             layer.in_channels,
             layer.out_channels,
             layer.kernel_size,
@@ -221,12 +253,49 @@ class _AnalogConvNd(_ConvNd, AnalogLayer):
 
         return torch_layer
 
+# _AnalogConvNd listed first to allow it to handle params and bias_rows
+class AnalogConv1d(_AnalogConvNd, Conv1d):
+    """ """
+
+    def __init__(
+        self,
+        params: CrossSimParameters,
+        # Base Conv2D layer arguments
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int | tuple[int,],
+        stride: int | tuple[int,] = 1,
+        padding: str | int | tuple[int,] = 0,
+        dilation: int | tuple[int,] = 1,
+        groups: int = 1,
+        bias: bool = True,
+        padding_mode: str = "zeros",
+        # Additional arguments for AnalogConv2d
+        bias_rows: int = 0,
+    ) -> None:
+        """ """
+        self.core_func = AnalogConvolution1D
+        # Rank-entry tuple of zeros for use in forward for padding
+        self._foward_padding = (0,)
+
+        # TODO: Do we need to handle device and dtype
+        super().__init__(
+            params,
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride,
+            padding,
+            dilation,
+            groups,
+            bias,
+            padding_mode,
+            bias_rows,
+        )
 
 # _AnalogConvNd listed first to allow it to handle params and bias_rows
 class AnalogConv2d(_AnalogConvNd, Conv2d):
     """ """
-
-    core_func = AnalogConvolution2D
 
     def __init__(
         self,
@@ -245,6 +314,10 @@ class AnalogConv2d(_AnalogConvNd, Conv2d):
         bias_rows: int = 0,
     ) -> None:
         """ """
+        self.core_func = AnalogConvolution2D
+        # Rank-entry tuple of zeros for use in forward for padding
+        self._foward_padding = (0,0)
+
         # TODO: Do we need to handle device and dtype
         super().__init__(
             params,
@@ -260,52 +333,46 @@ class AnalogConv2d(_AnalogConvNd, Conv2d):
             bias_rows,
         )
 
-    # Probably could be moved to ConvNd once the stuff around setting Nwindows
-    # is removed.
-    def forward(self, x: Tensor) -> Tensor:
-        """AnalogConv2d forward operation.
+# _AnalogConvNd listed first to allow it to handle params and bias_rows
+class AnalogConv3d(_AnalogConvNd, Conv3d):
+    """ """
 
-        See AnalogConvGrad.forward for details.
-        """
-        # Use the same padding logic as torch.nn.Conv2d.
-        # https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/conv.py#L453
-        # Special-casing zeros just because pad expects "constant" not "zeros"
+    def __init__(
+        self,
+        params: CrossSimParameters,
+        # Base Conv2D layer arguments
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int | tuple[int, int, int],
+        stride: int | tuple[int, int, int] = 1,
+        padding: str | int | tuple[int, int, int] = 0,
+        dilation: int | tuple[int, int, int] = 1,
+        groups: int = 1,
+        bias: bool = True,
+        padding_mode: str = "zeros",
+        # Additional arguments for AnalogConv2d
+        bias_rows: int = 0,
+    ) -> None:
+        """ """
+        self.core_func = AnalogConvolution3D
+        # Rank-entry tuple of zeros for use in forward for padding
+        self._foward_padding = (0,0,0)
 
-        if self.padding_mode != "zeros":
-            x_ = pad(x, self._reversed_padding_repeated_twice, self.padding_mode)
-        else:
-            x_ = pad(x, self._reversed_padding_repeated_twice)
-
-        # Now use x_ to set Nwindows
-        # This is dangerous because params can be copied so the params object
-        # won't be reflected but all current uses of Nwindows refer to the
-        # object directly.
-        # Still, be very careful with this pattern, its kind of a hack
-        if self.padding == "same":
-            Nox, Noy = x_.shape[0] // self.stride[0], x_.shape[1] // self.stride[1]
-        else:
-            Nox = 1 + (x_.shape[0] - self.kernel_size[0]) // self.stride[0]
-            Noy = 1 + (x_.shape[1] - self.kernel_size[1]) // self.stride[1]
-
-        for row_list in self.core.cores:
-            for core in row_list:
-                core.params.simulation.convolution.Nwindows = Nox * Noy
-
-        out = AnalogConvGrad.apply(
-            x_,
-            self.weight,
-            self.bias,
-            self.core,
-            self.bias_rows,
-            self.stride,
-            # Since we already padded here, we can simply set padding to (0,0)
-            (0, 0),
-            self.dilation,
-            self.output_padding,
-            self.groups,
+        # TODO: Do we need to handle device and dtype
+        super().__init__(
+            params,
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride,
+            padding,
+            dilation,
+            groups,
+            bias,
+            padding_mode,
+            bias_rows,
         )
 
-        return out
 
 
 class AnalogConvGrad(Function):
@@ -370,14 +437,18 @@ class AnalogConvGrad(Function):
         out = from_dlpack(core.apply_convolution(x.detach()))
 
         if bias is not None and not analog_bias:
-            if out.ndim == 3:
-                return out + bias.expand(*reversed(out.shape)).permute(
-                    *arange(out.ndim - 1, -1, -1),
-                )
-            elif out.ndim == 4:
-                return out + bias.expand(
-                    (out.shape[0], out.shape[3], out.shape[2], out.shape[1]),
-                ).permute(0, 3, 2, 1)
+            # Bias must be expanded from 1D to out.ndim for correct 
+            # broadcasting. Should be (bias.shape, 1...) with 1s equal to the
+            # total number of dimensions of the convolution. This is always
+            # weight.ndim - 2 because 2 dims for in and out channels.
+            # For batched inputs, we need a leading 1 on the shape and we can
+            # detect a batched input if the output has less dimensions than the
+            # weights
+            if out.ndim < weight.ndim:
+                bias_shape = bias.shape + (1,) * (weight.ndim - 2)
+            else:
+                bias_shape = (1,) + bias.shape + (1,) * (weight.ndim - 2)
+            return out + bias.reshape(bias_shape)
         else:
             return out
 

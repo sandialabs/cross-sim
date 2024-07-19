@@ -7,13 +7,5 @@
 #
 
 from .layer import AnalogLayer
-from .linear import AnalogLinear
-from .conv import AnalogConv1d, AnalogConv2d, AnalogConv3d
-from .convert import (
-    to_torch,
-    from_torch,
-    convertible_modules,
-    analog_modules,
-    inconvertible_modules,
-    synchronize,
-)
+from .dense import AnalogDense
+from .conv import AnalogConv1D, AnalogConv2D, AnalogConv3D

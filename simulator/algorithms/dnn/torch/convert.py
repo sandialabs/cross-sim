@@ -9,21 +9,32 @@
 """Utility functions for converting and managing CrossSim Torch layers."""
 
 from simulator import CrossSimParameters
-from torch.nn import Module, Linear, Conv2d, Identity, BatchNorm2d, Sequential
+from torch.nn import (
+    Module,
+    Linear,
+    Conv1d,
+    Conv2d,
+    Conv3d,
+    Identity,
+    BatchNorm2d,
+    Sequential,
+)
 from torch.nn.utils.fusion import fuse_conv_bn_eval, fuse_linear_bn_eval
 
 from copy import deepcopy
 
 from warnings import warn
 
-from simulator.algorithms.dnn.torch.conv import AnalogConv2d
+from simulator.algorithms.dnn.torch.conv import AnalogConv1d, AnalogConv2d, AnalogConv3d
 from simulator.algorithms.dnn.torch.linear import AnalogLinear
 
 from typing import Callable
 
 _conversion_map = {
     Linear: AnalogLinear,
+    Conv1d: AnalogConv1d,
     Conv2d: AnalogConv2d,
+    Conv3d: AnalogConv3d,
 }
 
 CrossSimParameterList = list[CrossSimParameters]
@@ -119,9 +130,9 @@ def to_torch(
     """Convert CrossSim layers to torch equivalents.
 
     This function provides an interface for converting all CrossSim layers in
-    a module to their torch equivalents. to_torc iterates over the input model
+    a module to their torch equivalents. to_torch iterates over the input model
     and replaces each CrossSim layer (as defined in _conversion_map) with the
-    equivalent basic torhch layer.
+    equivalent basic torch layer.
 
     Args:
         model: Torch module to convert layers within
@@ -236,7 +247,7 @@ def synchronize(model: Module) -> None:
 
 
 def reinitialize(model: Module) -> None:
-    """Call reinitialize on all layers. Mainly used to re-sample random conductance errors
+    """Call reinitialize on all layers. Mainly used to re-sample random conductance errors.
 
     Args:
         model: Torch module to synchronize weights.
