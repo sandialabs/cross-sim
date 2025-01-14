@@ -1,3 +1,7 @@
+### As of CrossSim v3.1, this neural network inference interface is marked deprecated.
+- This interface is also incompatible with TensorFlow version 2.16+ (there will be errors when loading Keras model configurations).
+- For neural network inference, please use one of the new interfaces: ``/applications/dnn/keras`` or ``/applications/dnn/torch``
+
 # Neural network inference
 
 This directory contains CrossSim's neural network inference interface. For a full documentation of CrossSim Inference, please see the [inference manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual_v2.0.pdf). The manual is currently being updated, but is still mostly up-to-date.

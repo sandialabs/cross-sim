@@ -19,8 +19,11 @@ from __future__ import annotations
 from abc import abstractmethod, ABC
 
 from simulator import AnalogCore, CrossSimParameters
-from torch import Tensor
+import torch
 from torch.nn import Module
+from warnings import warn
+
+import numpy as np
 
 
 class AnalogLayer(Module, ABC):
@@ -51,9 +54,9 @@ class AnalogLayer(Module, ABC):
             In most cases these should be thin wrappers around the
             implementations in AnalogCore
         params:
-            A CrossSimParameters object or list of CrossSimParameters objects
-            for layers requiring multiple arrays. Typically passed directly
-            to the core object.
+            CrossSimParameters object or list of CrossSimParameters (for layers
+            requiring multiple arrays) for the AnalogLinear layer. If a list, the
+            length must match the number of arrays used within AnalogCore.
         analog_bias:
             Boolean indicating if the bias of the layer is part of the analog
             array or stored and computing digitally.
@@ -73,6 +76,21 @@ class AnalogLayer(Module, ABC):
             empty if `self.analog_bias = False`
     """
 
+    # Torch inexplicably doesn't have any native conversion from numpy dtypes to torch
+    # Using a dict from the torch testing framework:
+    # https://github.com/pytorch/pytorch/blob/main/torch/testing/_internal/common_utils.py#L1663
+    _numpy_to_torch_dtype_dict = {
+        np.dtype("int8"): torch.int8,
+        np.dtype("int16"): torch.int16,
+        np.dtype("int32"): torch.int32,
+        np.dtype("int64"): torch.int64,
+        np.dtype("float16"): torch.float16,
+        np.dtype("float32"): torch.float32,
+        np.dtype("float64"): torch.float64,
+        np.dtype("complex64"): torch.complex64,
+        np.dtype("complex128"): torch.complex128,
+    }
+
     # MRO for implementing layers (Linear for example):
     # AnalogLinear, Linear, AnalogLayer, Module, ABC, Object
 
@@ -85,7 +103,7 @@ class AnalogLayer(Module, ABC):
         super().__init__()
 
     @abstractmethod
-    def form_matrix(self) -> Tensor:
+    def form_matrix(self) -> torch.Tensor:
         """Builds 2D weight matrix for programming into the array.
 
         Returns:
@@ -95,7 +113,7 @@ class AnalogLayer(Module, ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Implements the inference (forward) operation for the layer.
 
         The result of forward should be identical to the original layer result
@@ -111,11 +129,11 @@ class AnalogLayer(Module, ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def get_core_weights(self) -> tuple[Tensor, Tensor | None]:
+    def get_core_weights(self) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Gets the weight and bias tensors with errors applied.
 
         Returns:
-            Tuple of Torch Tensors, 2D for weights, 1D or None for bias
+            Tuple of Torch Tensors, one per variable.
         """
         raise NotImplementedError
 
@@ -150,8 +168,8 @@ class AnalogLayer(Module, ABC):
                 CrossSimParameters object or list of CrossSimParameters objects
                 (for layers requiring multiple arrays) for the analog layer.
             bias_rows:
-                Number of analog rows to use for the bias. 0 indicates a
-                digital bias. Ignored if layer does not have a bias.
+                Integer indicating the number of analog rows to use for the bias.
+                0 indicates a digital bias. Ignored if layer does not have a bias.
 
         Returns:
             A new analog equivalent layer
@@ -170,7 +188,9 @@ class AnalogLayer(Module, ABC):
 
         Arguments:
             layer: AnalogLayer to copy
-            physical_weights: bool indicating whether to use ideal weights
+            physical_weights:
+                Bool indicating whether the torch layer should have ideal weights or
+                weights with programming error applied.
 
         Returns:
             A new torch equivalent to the analog layer.
@@ -178,15 +198,14 @@ class AnalogLayer(Module, ABC):
         """
         raise NotImplementedError
 
-    def get_matrix(self) -> Tensor:
+    def get_matrix(self) -> torch.Tensor:
         """Returns the programmed 2D analog array.
 
         Returns:
-            Torch tensor version of the 2D array with non-idealities applied.
+            Torch tensor of the 2D array with non-idealities applied.
         """
-        return Tensor(self.core.get_matrix())
+        return torch.Tensor(self.core.get_matrix())
 
-    # Names are hard, maybe sync_weights?
     # TODO: add kwargs for set_matrix? After core rework is done
     def synchronize(self) -> None:
         """Updates the analog weight representation based on weight parameters.
@@ -194,19 +213,23 @@ class AnalogLayer(Module, ABC):
         Fully resamples programming error for the entire analog representation
         (weights and bias if in analog). Designed to ensure weight consistency
         after using an in-place tensor update on the weights and/or bias
-        (e.g. add_()). Primarily used forCrossSim-in-the-loop training as
+        (e.g. add_()). Primarily used for CrossSim-in-the-loop training as
         optimizers use in-place updates.
         """
         self.core.set_matrix(self.form_matrix().detach())
 
-    def _set_weight(self, weight: Tensor) -> None:
+    def _set_weight(self, weight: torch.Tensor) -> None:
         """Updates the analog representation of the weights.
 
         Will fully resample the entire weight matrix. Scaling will be updated
         if needed for percentile weight scaling.
         """
+        # For layers where matrix formation is more complicated than a reshape
+        # (grouped convolutions), we still need to use the full matrix
+        # formation function and then slice it
+        formed_matrix = self.form_matrix().detach()
         if self._consistent_limits():
-            self.core[self.weight_mask] = weight.detach()
+            self.core[self.weight_mask] = formed_matrix[self.weight_mask]
         else:
             # If this layer has an analog bias but it doesn't exist yet don't
             # bother forming the matrix with dummy data and forming the matrix
@@ -214,23 +237,21 @@ class AnalogLayer(Module, ABC):
             # allocated.
             if self.analog_bias and not hasattr(self, "bias"):
                 return
-            self.core.set_matrix(self.form_matrix().detach())
+            self.core.set_matrix(formed_matrix)
 
-    def _set_bias(self, bias: Tensor) -> None:
+    def _set_bias(self, bias: torch.Tensor) -> None:
         """Updates the analog representation of the bias.
 
         Will fully resample the entire analog bias. Scaling will be updated
         if needed for percentile weight scaling.
         """
+        # As with _set_bias, defer to the matrix formation to avoid needing to
+        # reimplement layer-specific formation logic.
+        formed_matrix = self.form_matrix().detach()
         if self._consistent_limits():
-            bias_expanded = (
-                (bias / self.bias_rows)
-                .reshape((self.core.shape[0], 1))
-                .repeat((1, self.bias_rows))
-            )
-            self.core[self.bias_mask] = bias_expanded.detach()
+            self.core[self.bias_mask] = formed_matrix[self.bias_mask]
         else:
-            self.core.set_matrix(self.form_matrix().detach())
+            self.core.set_matrix(formed_matrix)
 
     def _consistent_limits(self) -> bool:
         """Checks whether updates to internal attributes require rescaling.
@@ -262,7 +283,7 @@ class AnalogLayer(Module, ABC):
             self.weight.detach(),
             reset=True,
         )
-        w_consistent = w_max == self.core.max
+        w_consistent = w_max <= self.core.max
 
         # Condition on hasattr for the case where analog_bias is true but bias
         # has not been initialized yet
@@ -272,11 +293,62 @@ class AnalogLayer(Module, ABC):
                 self.bias.detach(),
                 reset=True,
             )
-            b_consistent = b_max == self.core.max
+            b_consistent = b_max <= self.core.max
         else:
             b_consistent = True
 
         return w_consistent and b_consistent
+
+    @staticmethod
+    def _set_device(
+        device: torch.device | None,
+        params: CrossSimParameters,
+    ) -> torch.device:
+        if not device:
+            if params.simulation.useGPU:
+                return torch.device("cuda:{}".format(params.simulation.gpu_id))
+            else:
+                return torch.device("cpu")
+
+        if all((d not in str(device) for d in ("cpu", "cuda"))):
+            warn(
+                (
+                    "Got device" + str(device) + ". "
+                    "Only 'cpu' and 'cuda' devices are officially supported. Other "
+                    "device types may result in additional copies or unexpected "
+                    "behavior."
+                ),
+                category=RuntimeWarning,
+                stacklevel=2,
+            )
+            return device
+
+        if params.simulation.useGPU and "cuda" not in str(device):
+            raise ValueError(
+                "Device mismatch: layer device is not specified as 'cuda' but "
+                "CrossSim specifies useGPU = True.",
+            )
+        if not params.simulation.useGPU and "cpu" not in str(device):
+            raise ValueError(
+                "Device mismatch: layer device is not specified as 'cpu' but "
+                "CrossSim specifies useGPU = False.",
+            )
+
+        if (
+            "cuda" in str(device)
+            and device.index is not None
+            and device.index != params.simulation.gpu_id
+        ):
+            warn(
+                (
+                    "device.index does not match params.simulation.gpu_id. This may "
+                    "result in unexpected behavior."
+                ),
+                category=RuntimeWarning,
+                stacklevel=2,
+            )
+
+        return device
 
     def __setattr__(self, name, value):
         """Triggers CrossSim-specific side effects for certain attributes.
@@ -306,4 +378,11 @@ class AnalogLayer(Module, ABC):
             if name == "bias" and self.analog_bias:
                 self._set_bias(value.data)
             if name in ["params", "bias_rows"]:
+                # TODO: technically a minor incompatibility with reinitialize and
+                # lists of param objects, minor so error for now.
+                if name == "params" and isinstance(value, list):
+                    raise NotImplementedError(
+                        "Setting params as a list after core creation is not supported."
+                        "Make a new core with a list of parameters instead.",
+                    )
                 self.reinitialize()

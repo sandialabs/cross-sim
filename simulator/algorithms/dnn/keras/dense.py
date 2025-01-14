@@ -6,50 +6,111 @@
 # See LICENSE for full license details
 #
 
+"""CrossSim version of keras.layer.Dense.
+
+AnalogDense provides a CrossSim-based forward using analog MVM.
+"""
 
 from __future__ import annotations
 
 from .layer import AnalogLayer
-from simulator import AnalogCore
+from simulator.algorithms.dnn.analog_linear import AnalogLinear
 
 from keras.layers import Dense
 from keras import ops
 
+from tensorflow.experimental.dlpack import from_dlpack
+
+import numpy.typing as npt
+
 
 class AnalogDense(AnalogLayer, Dense):
+    """CrossSim implementation of keras.layer.Dense.
+
+    See AnalogLayer for description of CrossSim-specific documentation.
+    See keras.layer.Dense for layer functionality documentation.
+    """
+
     def __init__(self, **kwargs) -> None:
+        """Initializes AnalogLinear and underlying keras.layer.Dense layer."""
         super().__init__(**kwargs)
 
-    def build(self, input_shape) -> None:
-        super().build(input_shape)
-        self.core = AnalogCore(self.form_matrix(), self.params)
+        # Initialize the counter for input profiling
+        self.last_input = 0
 
-    def call(self, inputs):
+    def build(self, input_shape) -> None:
+        """Create layer's AnalogCore.
+
+        Args:
+            input_shape: keras input_shape object
+        """
+        super().build(input_shape)
+
+        self.core = AnalogLinear(
+            self.params,
+            self.input_spec.axes[-1],
+            self.units,
+            self.bias_rows,
+        )
+        self.core.set_matrix(self.form_matrix())
+
+    def call(self, inputs: npt.ArrayLike) -> npt.NDArray:
+        """Dense layer forward operation."""
         if inputs.ndim < 3:
-            x = self._apply_linear(inputs)
+            input_ = inputs
         else:
-            x = self._apply_linear(
-                ops.reshape(inputs, (-1, inputs.shape[-1])),
-            ).reshape(
-                (*inputs.shape[:-1], -1),
-            )
+            input_ = ops.reshape(inputs, (-1, inputs.shape[-1]))
+
+        # There are two considerations with the following code:
+        # 1) Purely CPU implementations of keras (when no GPU is avaliable)
+        # cause a pointer misalignment when using dlpack, so only use dlpack for when
+        # part of the application is resident on the GPU. Additionally because Keras
+        # uses a non-default stream for gpu operations an explicit stream synchronize
+        # is required to avoid a race condition.
+        # 2) Tensorflow from_dlpack doesn't support some stride patterns, specifically
+        # those coming from transposed tensors. Since AnalogLinear.apply uses
+        # transposes we need to first transpose the result before from_dlpack will work.
+        # Importantly the stream synchronize has to happen before we undo the transpose
+        # since it must be before any subsequent keras operations on the result.
+        out = self.core.apply(input_)
+        if self.useGPU:
+            out = from_dlpack(out.T.toDlpack())
+            self.stream.synchronize()
+            out = ops.transpose(out)
+
+        if self.use_bias and not self.analog_bias:
+            out += self.bias
 
         if self.activation is not None:
-            x = self.activation(x)
-        return x
+            out = self.activation(out)
 
-    def form_matrix(self):
-        if not self.analog_bias:
-            return self.get_weights()[0]
+        if inputs.ndim < 3:
+            return out
         else:
-            bias_expanded = self.get_weights()[1] / self.bias_rows
-            return ops.vstack(
-                (self.get_weights()[0], ops.tile(bias_expanded, (self.bias_rows, 1))),
-            )
+            return ops.reshape(out, (*inputs.shape[:-1], -1))
 
-    def get_core_weights(self):
-        """Returns weight and biases with programming errors."""
-        matrix = self.get_matrix()
+    def form_matrix(self) -> npt.NDArray:
+        """Builds 2D weight matrix for programming into the array.
+
+        Returns:
+            2D Numpy Array of the matrix including analog bias if using.
+
+        """
+        if self.use_bias:
+            weight, bias = self.get_weights()
+        else:
+            weight = self.get_weights()[0]
+            bias = None
+
+        return self.core.form_matrix(weight.T, bias)
+
+    def get_core_weights(self) -> list[npt.NDArray]:
+        """Gets the weight and bias values with errors applied.
+
+        Returns:
+            List of numpy arrays with errors applied. CrossSim version of get_weights.
+        """
+        matrix = self.get_matrix().T
         weight = matrix[: self.get_weights()[0].shape[0]]
         wlist = [weight]
         if self.use_bias is True:
@@ -57,22 +118,23 @@ class AnalogDense(AnalogLayer, Dense):
             wlist.append(bias)
         return wlist
 
-    def reinitialize(self):
-        """Creates a new core object from layer and CrossSimParameters."""
+    def reinitialize(self) -> None:
+        """Rebuilds the layer's internal core object.
+
+        Allows parameters to be updated within a layer without rebuilding the
+        layer. This will resample all initialization-time errors
+        (e.g. programming error)  even if the models were not be changed.
+        Alternatively,  reinitialize can be used to directly resample
+        initialization-time errors.
+        """
         # Since bias_rows can change we need to recompute analog_bias
         # Also means we can't just the matrix from the old core, need to call
         # form_matrix again.
         self.analog_bias = self.bias is not None and self.bias_rows > 0
-        self.core = AnalogCore(self.form_matrix(), self.params)
-
-    def _apply_linear(self, x):
-        if not self.analog_bias:
-            out = self.core.rdot(x)
-            if self.use_bias:
-                return out + self.bias
-            else:
-                return out
-        else:
-            return self.core.rdot(
-                ops.hstack((x, ops.ones((x.shape[0], self.bias_rows)))),
-            )
+        self.core = AnalogLinear(
+            self.params,
+            self.input_spec.axes[-1],
+            self.units,
+            self.bias_rows,
+        )
+        self.core.set_matrix(self.form_matrix())

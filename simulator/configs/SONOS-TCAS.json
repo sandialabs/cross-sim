@@ -49,16 +49,8 @@
     "simulation": {
         "convolution": {
             "is_conv_core": true,
-            "stride": 2,
-            "Kx": 7,
-            "Ky": 7,
-            "Noc": 64,
-            "Nic": 3,
             "x_par": 1,
             "y_par": 1,
-            "weight_reorder": false,
-            "conv_matmul": true,
-            "bias_row": false,
             "Nwindows": 1
         },
         "analytics": {

@@ -242,18 +242,14 @@ class NumericCore(ICore, metaclass=ABCMeta):
         self.matrix_original = self.matrix.copy()
 
         if not self.params.xbar.device.read_noise.enable:
-            if self.params.simulation.convolution.weight_reorder:
-                self.matrix = self.weight_reorder(self.matrix_original.copy())
-
-            else:
-                self.matrix = xp.zeros(
-                    (Ncopy * Nx, Ncopy * Ny),
-                    dtype=self.matrix.dtype,
-                )
-                for m in range(Ncopy):
-                    x_start, x_end = m * Nx, (m + 1) * Nx
-                    y_start, y_end = m * Ny, (m + 1) * Ny
-                    self.matrix[x_start:x_end, y_start:y_end] = self.matrix_original
+            self.matrix = xp.zeros(
+                (Ncopy * Nx, Ncopy * Ny),
+                dtype=self.matrix.dtype,
+            )
+            for m in range(Ncopy):
+                x_start, x_end = m * Nx, (m + 1) * Nx
+                y_start, y_end = m * Ny, (m + 1) * Ny
+                self.matrix[x_start:x_end, y_start:y_end] = self.matrix_original
 
         else:
             # Block diagonal matrix for running MVMs
@@ -265,48 +261,6 @@ class NumericCore(ICore, metaclass=ABCMeta):
                 y_start, y_end = m * Ny, (m + 1) * Ny
                 self.matrix[x_start:x_end, y_start:y_end] = self.matrix_original
                 self.matrix_dense[m, :, :] = self.matrix_original
-
-    def weight_reorder(self, matrix_original):
-        """Utility function used to implement weight reordering for sliding window packing
-        This function is also used by higher cores if fast_balanced = True.
-        """
-        Kx = self.params.simulation.convolution.Kx
-        Ky = self.params.simulation.convolution.Ky
-        Nic = self.params.simulation.convolution.Nic
-        Noc = self.params.simulation.convolution.Noc
-        stride = self.params.simulation.convolution.stride
-        x_par = self.params.simulation.convolution.x_par  # parallel windows in x
-        y_par = self.params.simulation.convolution.y_par  # parallel windows in y
-        x_par_in = (x_par - 1) * stride + Kx
-        y_par_in = (y_par - 1) * stride + Ky
-
-        matrix = xp.zeros(
-            (x_par * y_par * Noc, x_par_in * y_par_in * Nic),
-            dtype=matrix_original.dtype,
-        )
-        m = 0
-        for ix in range(x_par):
-            for iy in range(y_par):
-                for ixx in range(Kx):
-                    for iyy in range(Ky):
-                        # 1: Which elements of the flattened input should be indexed for this 2D point?
-                        x_coord = stride * ix + ixx
-                        y_coord = stride * iy + iyy
-                        row_xy = x_coord * y_par_in + y_coord
-                        x_start = row_xy
-                        x_end = row_xy + Nic * x_par_in * y_par_in
-                        # 2: Which elements of the weight matrix are used for this point?
-                        Wx_coord = ixx * Ky + iyy
-                        W_start = Wx_coord
-                        W_end = Wx_coord + Nic * Kx * Ky
-                        y_start, y_end = m * Noc, (m + 1) * Noc
-                        matrix[
-                            y_start:y_end,
-                            x_start : x_end : (x_par_in * y_par_in),
-                        ] = matrix_original[:, W_start : W_end : (Kx * Ky)].copy()
-                m += 1
-
-        return matrix
 
     def unexpand_matrix(self):
         """Undo the expansion operation in expand_matrix."""

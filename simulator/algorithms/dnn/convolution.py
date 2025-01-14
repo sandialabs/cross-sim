@@ -8,6 +8,7 @@
 import numpy as np
 from ...cores.analog_core import AnalogCore
 from ...backend import ComputeBackend
+from warnings import warn
 
 xp = ComputeBackend()
 
@@ -19,6 +20,16 @@ class Convolution:
     """
 
     def __init__(self, convParams, **kwargs):
+        warn(
+        (
+            "This CrossSim neural network interface is deprecated as of 3.1 and "
+            "will be removed in version 3.2. Please switch to the new torch or "
+            "keras interaces in the torch and keras directories respectively."
+        ),
+        category=DeprecationWarning,
+        stacklevel=1,
+        )
+
         # Set the params of the Convolution core
         # If the Convolution core contains multiple neural cores, the master params object is a copy of the first
         # subcore params
@@ -281,10 +292,7 @@ class Convolution:
             )
 
         # Choose the compute method based on sliding window and input image batching option
-        if (
-            self.params.simulation.convolution.conv_matmul
-            and self.params.simulation.fast_matmul
-        ):
+        if self.params.simulation.fast_matmul:
             if M_input.ndim < 4:
                 return self.apply_convolution_matmul(M_input)
             else:
@@ -316,7 +324,6 @@ class Convolution:
         stride = self.stride
         x_par = self.params.simulation.convolution.x_par
         y_par = self.params.simulation.convolution.y_par
-        weight_reorder = self.params.simulation.convolution.weight_reorder
         NrowsX = Kx * Ky * Nic  # number of rows per sliding window MVM
 
         # Apply zero padding
@@ -372,44 +379,38 @@ class Convolution:
                             x_start += stride
 
                 else:
-                    if weight_reorder:
-                        x_end = x_start + Kx + stride * (x_par - 1)
-                        y_end = y_start0 + Ky + stride * (y_par - 1)
-                        Min_large = M_input[:, x_start:x_end, y_start0:y_end]
+                    Min_ij = xp.zeros(
+                        (Nic * x_par * y_par, Kx, Ky),
+                        dtype=M_input.dtype,
+                    )
+                    x_end = x_start + Kx
+                    v_start, v_end = 0, Nic
 
-                    else:
-                        Min_ij = xp.zeros(
-                            (Nic * x_par * y_par, Kx, Ky),
+                    for xxp in range(x_par):
+                        y_start = y_start0
+                        y_end = y_start + Ky
+                        for yyp in range(y_par):
+                            Min_ij[v_start:v_end, :, :] = M_input[
+                                :,
+                                x_start:x_end,
+                                y_start:y_end,
+                            ]
+                            y_start += stride
+                            y_end += stride
+                            v_start += Nic
+                            v_end += Nic
+                        x_start += stride
+                        x_end += stride
+
+                    if self.bias_row:
+                        Min_large = xp.ones(
+                            (x_par * y_par, Nrows),
                             dtype=M_input.dtype,
                         )
-                        x_end = x_start + Kx
-                        v_start, v_end = 0, Nic
-
-                        for xxp in range(x_par):
-                            y_start = y_start0
-                            y_end = y_start + Ky
-                            for yyp in range(y_par):
-                                Min_ij[v_start:v_end, :, :] = M_input[
-                                    :,
-                                    x_start:x_end,
-                                    y_start:y_end,
-                                ]
-                                y_start += stride
-                                y_end += stride
-                                v_start += Nic
-                                v_end += Nic
-                            x_start += stride
-                            x_end += stride
-
-                        if self.bias_row:
-                            Min_large = xp.ones(
-                                (x_par * y_par, Nrows),
-                                dtype=M_input.dtype,
-                            )
-                            Min_ij = Min_ij.reshape((x_par * y_par, NrowsX))
-                            Min_large[:, :-1] = Min_ij
-                        else:
-                            Min_large = Min_ij
+                        Min_ij = Min_ij.reshape((x_par * y_par, NrowsX))
+                        Min_large[:, :-1] = Min_ij
+                    else:
+                        Min_large = Min_ij
 
                 M_out_p = self.core.mat_multivec(Min_large)
                 # The line below is pure diabolical sorcery

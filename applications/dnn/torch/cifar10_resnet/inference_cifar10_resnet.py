@@ -8,7 +8,7 @@ import numpy as np
 import warnings, sys, time
 from build_resnet_cifar10 import ResNet_cifar10
 warnings.filterwarnings('ignore')
-sys.path.append("../") # to import dnn_inference_params
+sys.path.append("../../") # to import dnn_inference_params
 sys.path.append("../../../../") # to import simulator
 from simulator import CrossSimParameters
 from simulator.algorithms.dnn.torch.convert import from_torch, convertible_modules, reinitialize
@@ -91,8 +91,7 @@ base_params_args = {
     'adc_type' : "generic",
     'adc_per_ibit' : False,
     ## Simulation parameters
-    'useGPU' : useGPU,
-    'conv_matmul' : True,
+    'useGPU' : useGPU
     }
 
 ### Load input limits

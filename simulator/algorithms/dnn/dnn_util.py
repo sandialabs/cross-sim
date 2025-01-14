@@ -7,6 +7,7 @@
 import numpy as np
 from scipy.special import softmax
 from ...backend import ComputeBackend
+from ...parameters.core_parameters import CoreStyle, BitSlicedCoreStyle
 
 xp = ComputeBackend()
 
@@ -141,8 +142,6 @@ def apply_quantization(x, W, shift_bits, output_bits, signed):
 
 
 # Output function for Whetstone models
-
-
 def decode_from_key(key, input_vec, useGPU):
     """Decodes a vector using the specified key.
 
@@ -157,3 +156,16 @@ def decode_from_key(key, input_vec, useGPU):
     if useGPU:
         x = cp.asnumpy(input_vec)
     return softmax(np.dot(2 * x - 1, 2 * key - 1))
+
+
+# Return string pair specifying style of core and bit sliced core
+def corestyle_str(core_style, bitsliced_core_style):
+    if core_style == CoreStyle.BALANCED:
+        return ("BALANCED", "NONE")
+    elif core_style == CoreStyle.OFFSET:
+        return ("OFFSET", "NONE")
+    elif core_style == CoreStyle.BITSLICED:
+        if bitsliced_core_style == BitSlicedCoreStyle.BALANCED:
+            return ("BITSLICED", "BALANCED")
+        elif bitsliced_core_style == BitSlicedCoreStyle.OFFSET:
+            return ("BITSLICED", "OFFSET")

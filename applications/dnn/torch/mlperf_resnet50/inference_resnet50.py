@@ -9,14 +9,14 @@ import warnings, sys, time
 from build_resnet50 import resnet50
 from torch.utils.data import TensorDataset, DataLoader
 warnings.filterwarnings('ignore')
-sys.path.append("../") # to import dnn_inference_params
+sys.path.append("../../") # to import dnn_inference_params
 sys.path.append("../../../../") # to import simulator
 from simulator import CrossSimParameters
 from simulator.algorithms.dnn.torch.convert import from_torch, convertible_modules, reinitialize
 from dnn_inference_params import dnn_inference_params
 from find_adc_range import find_adc_range
 
-useGPU = True # use GPU?
+useGPU = False # use GPU?
 N = 1000 # number of images
 batch_size = 32
 Nruns = 1
@@ -40,7 +40,7 @@ params_list = [None] * n_layers
 
 # Params arguments common to all layers
 base_params_args = {
-    'ideal' : False,
+    'ideal' : True,
     ## Mapping style
     'core_style' : "BALANCED",
     'Nslices' : 1,
@@ -61,8 +61,8 @@ base_params_args = {
     'drift_model' : "none",
     't_drift' : 0,
     ## Array properties
-    'NrowsMax' : 1152,
-    'NcolsMax' : None,
+    'NrowsMax' : 1152, # inputs
+    'NcolsMax' : 256, # outputs
     'Rp_row' : 0, # ohms
     'Rp_col' : 0, # ohms
     'interleaved_posneg' : False,
@@ -78,8 +78,7 @@ base_params_args = {
     'adc_type' : "generic",
     'adc_per_ibit' : False,
     ## Simulation parameters
-    'useGPU' : useGPU,
-    'conv_matmul' : True,
+    'useGPU' : useGPU
     }
 
 ### Load input limits
@@ -108,7 +107,7 @@ analog_resnet50 = from_torch(resnet50_model, params_list, fuse_batchnorm=True, b
 
 #### Load pre-processed ImageNet dataset
 # Make sure this comes after params are set since the params can affect batch size
-imagenet_path = "../../../../../../imagenet/"
+imagenet_path = "../../../../../../../imagenet/"
 if N <= 1000:
     x = np.load(imagenet_path + "x_val_MLperfRN50_1000.npy")[:N,:,:,:]
 elif N <= 25000:

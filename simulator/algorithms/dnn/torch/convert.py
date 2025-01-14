@@ -16,10 +16,12 @@ from torch.nn import (
     Conv2d,
     Conv3d,
     Identity,
-    BatchNorm2d,
     Sequential,
 )
 from torch.nn.utils.fusion import fuse_conv_bn_eval, fuse_linear_bn_eval
+from torch.nn.modules.conv import _ConvNd
+from torch.nn.modules.batchnorm import _BatchNorm
+
 
 from copy import deepcopy
 
@@ -174,7 +176,6 @@ def to_torch(
     return torch_model
 
 
-# TODO: make generators
 def convertible_modules(model: Module) -> list[Module]:
     """Returns a list of layers in a model with CrossSim equivalents.
 
@@ -233,7 +234,7 @@ def inconvertible_modules(model: Module) -> list[Module]:
 
 
 def synchronize(model: Module) -> None:
-    """Synchronize layer.weight with the analog weight for all model layers.
+    """Synchronize layer.weight with the analog weight for all model in the module.
 
     Synchronize is used for CrossSim-in-the-loop training to update model
     weights after an optimizer uses an in-place update. This should called
@@ -247,10 +248,14 @@ def synchronize(model: Module) -> None:
 
 
 def reinitialize(model: Module) -> None:
-    """Call reinitialize on all layers. Mainly used to re-sample random conductance errors.
+    """Call reinitialize on all analog layers in the module.
+
+    This function is primarily used to re-sample random conductance errors as updating
+    the params object of an analog layer will reinitialize that layer with the new
+    params.
 
     Args:
-        model: Torch module to synchronize weights.
+        model: Torch module to reinitialize.
     """
     for layer in analog_modules(model):
         layer.reinitialize()
@@ -309,7 +314,6 @@ def _convert_children_to_torch(
 
 
 def _fuse_all_bn(model: Module) -> Module:
-    """ """
     fused_model = deepcopy(model)
 
     # Torch requires the model be in eval mode for fusion
@@ -318,8 +322,7 @@ def _fuse_all_bn(model: Module) -> Module:
     _fuse_module_bn(fused_model)
 
     # Because BatchNorm fusion can sometimes miss layers, check and warn here
-    layer_types = {type(i) for i in fused_model.modules()}
-    if BatchNorm2d in layer_types:
+    if any(isinstance(i, _BatchNorm) for i in fused_model.modules()):
         warn(
             (
                 "Not all BatchNorm layers removed after fusion. This may be expected "
@@ -350,11 +353,11 @@ def _fuse_module_bn(module: Module):
 
     for name, child in module.named_children():
         # These are the layers we know how to fuse
-        if isinstance(child, Linear | Conv2d):
+        if isinstance(child, Linear | _ConvNd):
             prev_name, prev_child = name, child
 
         # Batchnorm layer to fuse
-        elif isinstance(child, BatchNorm2d):
+        elif isinstance(child, _BatchNorm):
             if prev_name is None or prev_child is None:
                 # This happens when a BatchNorm layer is in a different
                 # container from the layer to be fused. To avoid this you
@@ -364,7 +367,7 @@ def _fuse_module_bn(module: Module):
 
             if isinstance(prev_child, Linear):
                 fused_layer = fuse_linear_bn_eval(prev_child, child)
-            elif isinstance(prev_child, Conv2d):
+            elif isinstance(prev_child, _ConvNd):
                 fused_layer = fuse_conv_bn_eval(prev_child, child)
             setattr(module, prev_name, fused_layer)
             # Replace the batchnorm layer with an identity layer

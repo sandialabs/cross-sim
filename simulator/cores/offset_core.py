@@ -206,7 +206,7 @@ class OffsetCore(WrapperCore):
                     i1 = self.last_adc_input
                     i2 = self.last_adc_input + num_inputs
                     self.adc_inputs[k, i1:i2] = xp.array(
-                        output_k.flatten(), dtype=xp.float32
+                        output_k.flatten(), dtype=xp.float32,
                     )
 
                 # ADC
@@ -306,6 +306,10 @@ class OffsetCore(WrapperCore):
             output = output_shifted - offset
         else:
             output = (output - self.Gmin_norm) / self.Wrange_xbar - 0.5
+
+        # Unexpand the matrix
+        if self.params.simulation.disable_fast_matmul:
+            output = output[: self.W_shape[0], : self.W_shape[1]]
         output *= 2 * self.max
         return output
 

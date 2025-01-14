@@ -220,7 +220,7 @@ class BalancedCore(WrapperCore):
                     i1 = self.last_adc_input
                     i2 = self.last_adc_input + num_inputs
                     self.adc_inputs[0, i1:i2] = xp.array(
-                        output.flatten(), dtype=xp.float32
+                        output.flatten(), dtype=xp.float32,
                     )
                 else:
                     num_inputs = 2 * output_pos.size
@@ -271,13 +271,12 @@ class BalancedCore(WrapperCore):
 
                 # Profiling of bit sliced ADC inputs
                 if self.analytics_params.profile_adc_inputs:
-
                     if self.subtract_current_in_xbar or self.interleaved_posneg:
                         num_inputs = output_bal.size
                         i1 = self.last_adc_input
                         i2 = self.last_adc_input + num_inputs
                         self.adc_inputs[k, i1:i2] = xp.array(
-                            output_bal.flatten(), dtype=xp.float32
+                            output_bal.flatten(), dtype=xp.float32,
                         )
                     else:
                         num_inputs = 2 * output_pos.size
@@ -285,7 +284,7 @@ class BalancedCore(WrapperCore):
                         i2 = self.last_adc_input + num_inputs
                         self.adc_inputs[k, i1:i2] = xp.array(
                             xp.concatenate(
-                                (output_pos.flatten(), output_neg.flatten())
+                                (output_pos.flatten(), output_neg.flatten()),
                             ),
                             dtype=xp.float32,
                         )
@@ -361,6 +360,11 @@ class BalancedCore(WrapperCore):
             output = self.core_pos._read_matrix() - self.core_neg._read_matrix()
         else:
             output = self.W_balanced.copy()
+
+        # Unexpand the matrix
+        if self.params.simulation.disable_fast_matmul:
+            output = output[: self.W_shape[0], : self.W_shape[1]]
+
         output /= self.params.xbar.device.Grange_norm
         output *= self.max
         return output
@@ -379,26 +383,21 @@ class BalancedCore(WrapperCore):
     def expand_matrix(self, Ncopy):
         # Calls expand_matrix in the inner cores
         # Makes multiple copies of matrix to compute multiple MVMs in parallel
-
         if not self.params.simulation.fast_balanced:
             self.core_pos.expand_matrix(Ncopy)
             self.core_neg.expand_matrix(Ncopy)
         else:
-            if not self.params.simulation.convolution.weight_reorder:
-                Nx, Ny = self.W_balanced.shape
-                W_temp = self.W_balanced.copy()
-                self.W_shape = self.W_balanced.shape
-                self.W_balanced = xp.zeros(
-                    (Ncopy * Nx, Ncopy * Ny),
-                    dtype=self.W_balanced.dtype,
-                )
-                for m in range(Ncopy):
-                    x_start, x_end = m * Nx, (m + 1) * Nx
-                    y_start, y_end = m * Ny, (m + 1) * Ny
-                    self.W_balanced[x_start:x_end, y_start:y_end] = W_temp.copy()
-
-            else:
-                self.W_balanced = self.core_pos.weight_reorder(self.W_balanced.copy())
+            Nx, Ny = self.W_balanced.shape
+            W_temp = self.W_balanced.copy()
+            self.W_shape = self.W_balanced.shape
+            self.W_balanced = xp.zeros(
+                (Ncopy * Nx, Ncopy * Ny),
+                dtype=self.W_balanced.dtype,
+            )
+            for m in range(Ncopy):
+                x_start, x_end = m * Nx, (m + 1) * Nx
+                y_start, y_end = m * Ny, (m + 1) * Ny
+                self.W_balanced[x_start:x_end, y_start:y_end] = W_temp.copy()
 
     def unexpand_matrix(self):
         if not self.params.simulation.fast_balanced:

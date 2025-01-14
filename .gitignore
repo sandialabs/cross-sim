@@ -1,12 +1,11 @@
 __pycache__/
 .hypothesis/
-.ipynb_checkpoints/
+
 .pytest_cache/
 *.py[cod]
 *$py.class
 *.o
 *~
-*.tar.gz
 applications/dnn/helpers/__pycache__
 applications/dnn/inference/adc/adc_dac_inputs/
 applications/dnn/inference/network_outputs/
@@ -16,8 +15,6 @@ applications/dnn/training/sweep_results/
 applications/dnn/training/weight_update_stats/
 applications/dnn/inference/errorloop_outputs/
 applications/dnn/torch/cifar10_resnet/cifar-10-batches-py/
-tutorial/ISCA2024/cifar-10-batches-py/
-tutorial/ISCA2024/MNIST/
 tutorial/.ipynb_checkpoints/
 tutorial/params_64.json
 CrossSim.egg-info/

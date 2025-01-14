@@ -9,10 +9,10 @@ import numpy as np
 import warnings, sys, time
 from build_resnet_cifar10 import ResNet_cifar10
 warnings.filterwarnings('ignore')
-sys.path.append("../") # to import dnn_inference_params
+sys.path.append("../../") # to import dnn_inference_params
 sys.path.append("../../../../") # to import simulator
 from simulator import CrossSimParameters
-from simulator.algorithms.dnn.torch.convert import from_torch, convertible_modules, reinitialize
+from simulator.algorithms.dnn.torch.convert import from_torch, convertible_modules, analog_modules, reinitialize
 from simulator.algorithms.dnn.torch.profile import get_profiled_adc_inputs
 from dnn_inference_params import dnn_inference_params
 from calibration import calibrate_adc_limits
@@ -93,7 +93,6 @@ base_params_args = {
     'adc_type' : "generic",
     ## Simulation parameters
     'useGPU' : useGPU,
-    'conv_matmul' : True,
     ## Profiling
     'profile_xbar_inputs' : False,
     'profile_adc_inputs' : True,
@@ -152,7 +151,8 @@ print('Accuracy: {:.2f}% ({:d}/{:d})\n'.format(top1*100,int(top1*N),N))
 print("Collecting profiled ADC data")
 profiled_adc_inputs = get_profiled_adc_inputs(analog_resnet)
 print("Optimizing ADC limits")
-calibrated_adc_ranges = calibrate_adc_limits(analog_resnet, profiled_adc_inputs, Nbits=8)
+calibrated_adc_ranges = calibrate_adc_limits(
+    analog_modules(analog_resnet), profiled_adc_inputs, Nbits=8)
 
 ## Make sure the file name matches the parameters used!!
 # np.save("./calibrated_config/adc_limits_ResNet{:d}_balanced.npy".format(depth),

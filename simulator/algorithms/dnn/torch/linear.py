@@ -9,39 +9,67 @@
 """CrossSim version of Torch.nn.Linear.
 
 AnalogLinear provides a CrossSim-based forward using analog MVM. Backward is
-implemented using an ideal torch backward (unquantized). The layer supports a
-split analog bias.
+implemented using an ideal torch backward (unquantized).
 """
 
 from __future__ import annotations
 
 from .layer import AnalogLayer
 
-from simulator import AnalogCore, CrossSimParameters
-from torch import Tensor, cat, ones, zeros, kron, from_dlpack
+from simulator import CrossSimParameters
+from simulator.algorithms.dnn.analog_linear import AnalogLinear as LinearCore
+from torch import Tensor, kron, from_dlpack
 from torch.nn import Linear, Parameter
 from torch.autograd import Function
 
 
 class AnalogLinear(Linear, AnalogLayer):
-    """CrossSim implementation of torch.nn.Linear."""
+    """CrossSim implementation of torch.nn.Linear.
+
+    See AnalogLayer for description of CrossSim-specific documentation.
+    See torch.nn.Linear for layer functionality documentation.
+    """
 
     def __init__(
         self,
-        params: CrossSimParameters,
+        params: CrossSimParameters | list[CrossSimParameters],
         # Base Linear layer arguments
         in_features: int,
         out_features: int,
         bias: bool = True,
+        device=None,
+        dtype=None,
         # Additional arguments for AnalogLinear specifically
         bias_rows: int = 0,
     ) -> None:
-        """ """
-        # TODO: Do we need to handle device and dtype
-        # Device based on GPU vs not, dtype
-        super().__init__(in_features, out_features, bias)
+        """Initializes AnalogLinear and underlying torch.nn.Linear layer.
 
-        self.params = params.copy()
+        Args:
+            params:
+                CrossSimParameters object or list of CrossSimParameters (for layers
+                requiring multiple arrays) for the AnalogLinear layer. If a list, the
+                length must match the number of arrays used within AnalogCore.
+            in_features: See torch.nn.Linear in_features argument.
+            out_features: See torch.nn.Linear out_features argument.
+            bias: See torch.nn.Linear bias argument.
+            device: See torch.nn.Linear device argument.
+            dtype: See torch.nn.Linear dtype argument.
+            bias_rows:
+                Integer indicating the number of rows to use to implement the bias
+                within the array. 0 implies a digital bias. Ignored if bias is false.
+        """
+        device_ = AnalogLayer._set_device(
+            device,
+            params[0] if isinstance(params, list) else params,
+        )
+
+        super().__init__(in_features, out_features, bias, device_, dtype)
+
+        if isinstance(params, CrossSimParameters):
+            self.params = params.copy()
+        elif isinstance(params, list):
+            self.params = params[0].copy()
+
         self.bias_rows = bias_rows
 
         # Easier to track analog bias than digital bias
@@ -54,40 +82,27 @@ class AnalogLinear(Linear, AnalogLayer):
             slice(in_features, in_features + bias_rows, 1),
         )
 
-        # Initialize the counter for input profiling
-        self.last_input = 0
-
-        self.core = AnalogCore(self.form_matrix().detach(), self.params)
+        self.core = LinearCore(params, in_features, out_features, bias_rows)
+        self.core.set_matrix(self.form_matrix().detach())
 
     def form_matrix(self) -> Tensor:
-        """ """
-        if not self.analog_bias:
-            return self.weight
+        """Builds 2D weight matrix for programming into the array.
+
+        Returns:
+            2D Torch Tensor of the matrix.
+
+        """
+        weight_ = self.weight.detach().cpu()
+        if self.analog_bias:
+            return from_dlpack(self.core.form_matrix(weight_, self.bias.detach().cpu()))
         else:
-            bias_expanded = (
-                (self.bias / self.bias_rows)
-                .reshape((self.out_features, 1))
-                .repeat(1, self.bias_rows)
-            )
-            return cat((self.weight, bias_expanded), dim=1)
+            return from_dlpack(self.core.form_matrix(weight_))
 
     def forward(self, x: Tensor) -> Tensor:
         """Linear forward operation.
 
         See AnalogLinearGrad.forward for details.
         """
-
-        # Profile core inputs
-        if self.params.simulation.analytics.profile_xbar_inputs:
-            if self.last_input == 0:
-                self.xbar_inputs = zeros(
-                    (self.params.simulation.analytics.ntest, x.shape[1])
-                )
-            self.xbar_inputs[self.last_input : (self.last_input + x.shape[0]), ...] = (
-                x.detach().clone()
-            )
-            self.last_input += x.shape[0]
-
         return AnalogLinearGrad.apply(
             x,
             self.weight,
@@ -97,18 +112,32 @@ class AnalogLinear(Linear, AnalogLayer):
         )
 
     def get_core_weights(self) -> tuple[Tensor, Tensor | None]:
-        """Returns weight and biases with programming errors."""
+        """Gets the weight and bias tensors with errors applied.
+
+        Returns:
+            Tuple of Torch Tensors, 2D for weights, 1D or None for bias
+        """
+        # TODO: Slightly hackish, needed for test passage, remove once we agree on
+        # return device for get_matrix
         matrix = self.get_matrix()
-        weight = matrix[self.weight_mask]
+        weight = matrix[self.weight_mask].to(self.weight.device)
         if self.analog_bias:
             # Summing along dim1 implicitly handles the reshape
-            bias = matrix[self.bias_mask].sum(1)
+            bias = matrix[self.bias_mask].sum(1).to(self.bias.device)
         else:
             bias = self.bias
+
         return (weight, bias)
 
     def reinitialize(self) -> None:
-        """Creates a new core object from layer and CrossSimParameters."""
+        """Rebuilds the layer's internal core object.
+
+        Allows parameters to be updated within a layer without rebuilding the
+        layer. This will resample all initialization-time errors
+        (e.g. programming error)  even if the models were not be changed.
+        Alternatively,  reinitialize can be used to directly resample
+        initialization-time errors.
+        """
         # If we're being called and there is no core (called during init),
         # just bail out, init will handle it.
         if not hasattr(self, "core"):
@@ -118,7 +147,13 @@ class AnalogLinear(Linear, AnalogLayer):
         # Also means we can't just the matrix from the old core, need to call
         # form_matrix again.
         self.analog_bias = self.bias is not None and self.bias_rows > 0
-        self.core = AnalogCore(self.form_matrix().detach(), self.params)
+        self.core = LinearCore(
+            self.params,
+            self.in_features,
+            self.out_features,
+            self.bias_rows,
+        )
+        self.core.set_matrix(self.form_matrix().detach())
 
     @classmethod
     def from_torch(
@@ -129,25 +164,41 @@ class AnalogLinear(Linear, AnalogLayer):
     ) -> AnalogLinear:
         """Build AnalogLinear from a Linear layer.
 
+        Creates a new AnalogLinear layer with the same attributes as the original torch
+        layer.
+
         Args:
-            layer: torch.nn.Linear layer to be converted
+            layer: torch.nn.Linear layer to copy.
             params:
-                CrossSimParameters object or list of CrossSimParameters for
-                the AnalogLinear layer. If a list, the length must match the
-                number of arrays used within AnalogCore.
+                CrossSimParameters object or list of CrossSimParameters (for layers
+                requiring multiple arrays) for the AnalogLinear layer. If a list, the
+                length must match the number of arrays used within AnalogCore.
             bias_rows:
-                Integer indicating the number of rows used for the bias.
-                0 means bias is handled digitally.
+                Integer indicating the number of analog rows to use for the bias.
+                0 indicates a digital bias. Ignored if layer does not have a bias.
 
         Returns:
             AnalogLinear layer with the same weights and properties as input
             Linear layer.
+
+        Raises:
+            ValueError: Device mismatch between CrossSimParameters and layer
         """
+        device = AnalogLayer._set_device(
+            layer.weight.device,
+            params[0] if isinstance(params, list) else params,
+        )
+
         analog_layer = cls(
             params,
             layer.in_features,
             layer.out_features,
             layer.bias is not None,
+            # Adopt the convention that device and dtype are based on the device and
+            # dtype of the weight matrix for conversion. Technically misses some
+            # possible (but extremely silly) use cases.
+            device,
+            layer.weight.dtype,
             bias_rows,
         )
         analog_layer.weight = layer.weight
@@ -156,19 +207,47 @@ class AnalogLinear(Linear, AnalogLayer):
         return analog_layer
 
     @classmethod
-    def to_torch(cls, layer: AnalogLinear, physical_weights: bool = False) -> Linear:
+    def to_torch(
+        cls,
+        layer: AnalogLinear,
+        physical_weights: bool = False,
+        device=None,
+        dtype=None,
+    ) -> Linear:
         """Creates a torch Linear layer from an AnalogLinear.
 
         Args:
-            layer: AnalogLinear layer to be converted
+            layer: AnalogLinear layer to copy.
             physical_weights:
-                Bool indicating whether the torch layer should have ideal or
+                Bool indicating whether the torch layer should have ideal weights or
                 weights with programming error applied.
+            device:
+                The device where the layer will be placed. See torch.device for
+                additional documentation. If None, the device will be set based on the
+                layer's CrossSimParameters object.
+            dtype:
+                The dtype of the layer weights. See torch.dtype for additional
+                documentation. If None dtype will be set based on AnalogCore.dtype.
+
+        Returns:
+            torch.nn.Linear with the same properties and weights (potentially with
+            errors) as the AnalogLinear layer.
         """
+        if not device:
+            if layer.params.simulation.useGPU:
+                device = "cuda:{}".format(layer.params.simulation.gpu_id)
+            else:
+                device = "cpu"
+
+        if not dtype:
+            dtype = AnalogLayer._numpy_to_torch_dtype_dict[layer.core.dtype]
+
         torch_layer = Linear(
             layer.in_features,
             layer.out_features,
             layer.bias is not None,
+            device,
+            dtype,
         )
         if physical_weights:
             w, b = layer.get_core_weights()
@@ -200,12 +279,12 @@ class AnalogLinearGrad(Function):
         x: Tensor,
         weight: Tensor,
         bias: Tensor | None,
-        core: AnalogCore,
+        core: LinearCore,
         bias_rows: int,
     ) -> Tensor:
         """CrossSim-based Linear forward.
 
-        Foward takes both the layer core object as well as the true weights
+        Forward takes both the layer core object as well as the true weights
         and bias to save for the gradient computation. This uses a matmul
         representation for batched forward operations. All leading dimensions
         are collapsed into a single dimension so inputs to the core are
@@ -230,31 +309,23 @@ class AnalogLinearGrad(Function):
         """
         ctx.save_for_backward(x, weight, bias)
 
+        analog_bias = bias is not None and bool(bias_rows)
+
         # Get x into a 1D or 2D shape
         if x.ndim < 3:
             # 1D and 2D inputs are just a simple matvec/matmat
             x_ = x
         else:
             # torch.nn.Linear can take any leading dimension, for simplicity
-            # collapse the leading dimentions into one, compute as if 2D and
+            # collapse the leading dimensions into one, compute as if 2D and
             # then reshape back
             x_ = x.flatten(0, x.ndim - 2)
 
         # Perform the operation using CrossSim
-        if not (bias is not None and bias_rows):
-            if x.ndim == 1:
-                out = from_dlpack(core.matmul(x_.detach()))
-            else:
-                out = from_dlpack(core.matmul(x_.detach().T).T)
-            if bias is not None:
-                out += bias
-        else:
-            if x.ndim == 1:
-                x_aug = cat((x_, ones(bias_rows)))
-                out = from_dlpack(core.matmul(x_aug.detach()))
-            else:
-                x_aug = cat((x_.T, ones((bias_rows, x_.shape[0]))))
-                out = from_dlpack(core.matmul(x_aug.detach()).T)
+        out = from_dlpack(core.apply(x_.detach()))
+
+        if bias is not None and not analog_bias:
+            out += bias
 
         # For inputs larget than 2D reshape back to the expected shape
         if x.ndim < 3:

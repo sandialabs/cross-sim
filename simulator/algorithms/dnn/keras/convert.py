@@ -9,14 +9,29 @@
 """Utility functions for converting and managing CrossSim Keras layers."""
 
 from simulator import CrossSimParameters
-from keras.layers import Conv1D, Conv2D, Conv3D, Dense, Layer
+from keras.layers import (
+    Conv1D,
+    Conv2D,
+    Conv3D,
+    DepthwiseConv1D,
+    DepthwiseConv2D,
+    Dense,
+    Layer,
+)
+from keras import ops
 from keras.models import Model, Sequential
 from keras.src.models.functional import Functional
 from keras.src.layers.normalization.batch_normalization import BatchNormalization
 
-from copy import deepcopy, copy
+from copy import copy
 
-from simulator.algorithms.dnn.keras.conv import AnalogConv1D, AnalogConv2D, AnalogConv3D
+from simulator.algorithms.dnn.keras.conv import (
+    AnalogConv1D,
+    AnalogConv2D,
+    AnalogConv3D,
+    AnalogDepthwiseConv1D,
+    AnalogDepthwiseConv2D,
+)
 from simulator.algorithms.dnn.keras.dense import AnalogDense
 
 import numpy as np
@@ -25,6 +40,8 @@ _conversion_map = {
     Conv1D: AnalogConv1D,
     Conv2D: AnalogConv2D,
     Conv3D: AnalogConv3D,
+    DepthwiseConv1D: AnalogDepthwiseConv1D,
+    DepthwiseConv2D: AnalogDepthwiseConv2D,
     Dense: AnalogDense,
 }
 
@@ -76,7 +93,7 @@ def from_keras(
         return _conversion_map[type(model)].from_keras(model, params, bias_rows)
 
     # Enumerate the convertible layers for error checking
-    convert_layers = convertible_layers(model)
+    convert_layers = convertible_layers(model, expand_nested=True)
     if isinstance(params, list) and len(convert_layers) != len(params):
         raise ValueError(
             f"Length of params list ({len(params)}) must match number "
@@ -106,7 +123,7 @@ def from_keras(
         )
     else:
         raise NotImplementedError(
-            "from_keras is not implemented for model subclassing.",
+            "from_keras is not implemented for Model subclassing.",
         )
 
     return converted_model
@@ -145,7 +162,7 @@ def to_keras(
         return type(model).to_keras(model, physical_weights)
 
     # Enumerate the convertible layers for error checking
-    analog_layer = analog_layers(model)
+    analog_layer = analog_layers(model, expand_nested=True)
     if isinstance(physical_weights, list) and len(analog_layer) != len(
         physical_weights,
     ):
@@ -161,58 +178,82 @@ def to_keras(
         converted_model = _convert_functional_to_keras(model, physical_weights)
     else:
         raise NotImplementedError(
-            "to_keras is not implemented for model subclassing.",
+            "to_keras is not implemented for Model subclassing.",
         )
 
     return converted_model
 
 
-def convertible_layers(model: Layer) -> list[Layer]:
+def convertible_layers(model: Layer, expand_nested: bool = False) -> list[Layer]:
     """Returns a list of layers in a model with CrossSim equivalents.
 
     Args:
         model: keras model to examine.
+        expand_nested:
+            bool indicating if all nested models (Sequential or Functional) should be
+            expanded into a single flat list. False matches model.layers behavior.
 
     Returns:
         List of all layers in the model which have a CrossSim version.
     """
     # Bail out early since no layers have subclasses
-    if type(model) in _conversion_map:
+    if type(model) in _conversion_map and not hasattr(model, "layers"):
         return [model]
 
-    return [l for l in model.layers if l in _conversion_map]
+    if expand_nested:
+        layer_list = _flatten_model(model)
+    else:
+        layer_list = model.layers
+
+    return [layer for layer in layer_list if type(layer) in _conversion_map]
 
 
-def analog_layers(model: Layer) -> list[Layer]:
+def analog_layers(model: Layer, expand_nested: bool = False) -> list[Layer]:
     """Returns a list of CrossSim layers in a models.
 
     Args:
         model: Keras module to examine.
+        expand_nested:
+            bool indicating if all nested models (Sequential or Functional) should be
+            expanded into a single flat list. False matches model.layers behavior.
 
     Returns:
         List of all layers in the model which use CrossSim.
     """
     # Bail out early since no layers have subclasses
-    if type(model) in _conversion_map.values():
+    if type(model) in _conversion_map.values() and not hasattr(model, "layers"):
         return [model]
 
-    return [l for l in model.layers if l in _conversion_map.values()]
+    if expand_nested:
+        layer_list = _flatten_model(model)
+    else:
+        layer_list = model.layers
+
+    return [layer for layer in layer_list if type(layer) in _conversion_map.values()]
 
 
-def inconvertible_layers(model: Layer) -> list[Layer]:
+def inconvertible_layers(model: Layer, expand_nested: bool = False) -> list[Layer]:
     """Returns a list of layers in a keras model without CrossSim equivalents.
 
     Args:
         model: Keras model to examine.
+        expand_nested:
+            bool indicating if all nested models (Sequential or Functional) should be
+            expanded into a single flat list. False matches model.layers behavior.
 
     Returns:
         List of all layers in the model which do not have a CrossSim version.
     """
     # Bail out early since no layers have subclasses
-    if type(model) not in _conversion_map:
+    if type(model) not in _conversion_map and not hasattr(model, "layers"):
         return [model]
 
-    return [l for l in model.layer if l not in _conversion_map]
+    if expand_nested:
+        layer_list = _flatten_model(model)
+    else:
+        layer_list = model.layers
+
+    return [layer for layer in layer_list if type(layer) not in _conversion_map]
 
 
 def reinitialize(model: Layer) -> None:
@@ -225,16 +266,25 @@ def reinitialize(model: Layer) -> None:
         layer.reinitialize()
 
 
-# Function to fuse the weights of a Dense or Conv2D layer
+def _flatten_model(model: Layer) -> list[Layer]:
+    out_list = []
+    for layer in model.layers:
+        if hasattr(layer, "layers"):
+            out_list.extend(_flatten_model(layer))
+        else:
+            out_list.append(layer)
+
+    return out_list
+
+
 def _fuse_bn_weights(
-    input_layer: Dense | Conv2D,
+    input_layer: Dense | Conv1D | Conv2D | Conv3D | DepthwiseConv1D | DepthwiseConv2D,
     bn_layer: BatchNormalization,
 ):
-    new_layer = deepcopy(input_layer)
-    Wm_0 = input_layer.get_weights()
-    Wm = Wm_0[0]
-    if new_layer.use_bias:
-        Wbias = Wm_0[1]
+    layer_config = input_layer.get_config()
+    build_config = input_layer.get_build_config()
+    # All fused layers have a bias
+    layer_config["use_bias"] = True
 
     if bn_layer.scale and bn_layer.center:
         gamma, beta, mu, var = bn_layer.get_weights()
@@ -249,20 +299,33 @@ def _fuse_bn_weights(
         gamma, beta = 1, 0
 
     epsilon = bn_layer.epsilon
-    if not new_layer.use_bias:
-        Wbias = np.zeros(Wm.shape[-1])
-        new_layer.use_bias = True
+
+    if input_layer.use_bias:
+        Wm, Wbias = input_layer.get_weights()
+    else:
+        Wm = input_layer.get_weights()[0]
+        Wbias = ops.zeros(Wm.shape[-1])
+
+    if isinstance(input_layer, DepthwiseConv1D | DepthwiseConv2D):
+        orig_shape = Wm.shape
+        Wm = ops.reshape(Wm, (*input_layer.kernel_size, 1, -1))
 
     Wm = gamma * Wm / np.sqrt(var + epsilon)
+
+    if isinstance(input_layer, DepthwiseConv1D | DepthwiseConv2D):
+        Wm = ops.reshape(Wm, orig_shape)
+
     Wbias = (gamma / np.sqrt(var + epsilon)) * (Wbias - mu) + beta
-    new_layer.set_weights((Wm, Wbias))
+
+    new_layer = type(input_layer)(**layer_config)
+    new_layer.build_from_config(build_config)
+    new_layer.set_weights([Wm, Wbias])
 
     return new_layer
 
 
 def _convert_sequential_from_keras(model, params, bias_rows, fuse_batchnorm: bool):
-    added_layers = []
-    new_model = deepcopy(model)
+    new_model = Sequential()
     # Need i because it is used to find the next layer for fuse batchnorm
     for i, layer in enumerate(model.layers):
         if type(layer) in _conversion_map:
@@ -277,47 +340,42 @@ def _convert_sequential_from_keras(model, params, bias_rows, fuse_batchnorm: boo
                         layer,
                         model.layers[i + 1],
                     )
-            if isinstance(params, CrossSimParameters):
-                params_ = params
-            else:
-                params_ = params[i]
-            if isinstance(bias_rows, int):
-                bias_rows_ = bias_rows
-            else:
-                bias_rows_ = bias_rows[i]
 
+            params_ = _val_from_list(params)
+            bias_rows_ = _val_from_list(bias_rows)
             analog_layer = _conversion_map[type(layer)].from_keras(
                 layer,
                 params_,
                 bias_rows_,
             )
-            added_layers.append(analog_layer)
         # if the layer is a batchnorm, skip it
         elif isinstance(layer, BatchNormalization) and fuse_batchnorm:
             continue
+
+        elif isinstance(layer, Sequential):
+            analog_layer = _convert_sequential_from_keras(
+                layer, params, bias_rows, fuse_batchnorm,
+            )
+        elif isinstance(layer, Functional):
+            analog_layer = _convert_functional_from_keras(
+                layer, params, bias_rows, fuse_batchnorm,
+            )
         else:
             analog_layer = copy(layer)
-            added_layers.append(analog_layer)
 
-    new_model._layers = added_layers
+        new_model._layers.append(analog_layer)
     return new_model
 
 
 def _convert_functional_from_keras(model, params, bias_rows, fuse_batchnorm: bool):
-    # Auxiliary dictionary to describe the network graph
-    network_dict = {"input_layers_of": {}, "new_output_tensor_of": {}}
+    if len(model.layers) != len(model.operations):
+        raise NotImplementedError(
+            "Functional models incorporating operations "
+            "rather than layers are not currently supported.",
+        )
 
-    # Set the input layers of each layer
-    for layer in model.layers:
-        for node in layer._outbound_nodes:
-            layer_name = node.operation.name
-            if layer_name not in network_dict["input_layers_of"]:
-                network_dict["input_layers_of"].update({layer_name: [layer.name]})
-            elif layer.name not in network_dict["input_layers_of"][layer_name]:
-                network_dict["input_layers_of"][layer_name].append(layer.name)
-
-    # Set the output tensor of the input layer
-    network_dict["new_output_tensor_of"].update({model.layers[0].name: model.input})
+    network_dict = _create_network_dict(model)
+    layer_names = {layer.name for layer in model.layers}
 
     # Iterate over all layers after the inputmodel.summary(*)
     for idx, layer in enumerate(model.layers[1:]):
@@ -327,7 +385,7 @@ def _convert_functional_from_keras(model, params, bias_rows, fuse_batchnorm: boo
         # if the input layer is a batchnorm layer, get the input layer of the
         # batchnorm layer so we can update the network_dict to skip the batchnorm
         for i in range(len(network_dict["input_layers_of"][layer.name])):
-            if isinstance(
+            if layer.name in layer_names and isinstance(
                 model.get_layer(network_dict["input_layers_of"][layer.name][i]),
                 BatchNormalization,
             ):
@@ -354,6 +412,9 @@ def _convert_functional_from_keras(model, params, bias_rows, fuse_batchnorm: boo
 
         if len(layer_input) == 1:
             layer_input = layer_input[0]
+            # In some CNNs, layer_input will still be a list
+            if isinstance(layer_input, list):
+                layer_input = layer_input[0]
 
         x = layer_input
         # If type of layer is in _conversion_map, replace it with analog conversion
@@ -363,24 +424,22 @@ def _convert_functional_from_keras(model, params, bias_rows, fuse_batchnorm: boo
                 # Loop through the succeeding layers of the model to find the
                 # corresponding batchnormalization layer
                 for succeeding_layer in model.layers[idx:]:
-                    if network_dict["input_layers_of"][succeeding_layer.name][
-                        0
-                    ] == layer.name and isinstance(
-                        succeeding_layer, BatchNormalization,
+                    if (
+                        succeeding_layer.name in network_dict["input_layers_of"]
+                        and network_dict["input_layers_of"][succeeding_layer.name][0]
+                        == layer.name
+                        and isinstance(
+                            succeeding_layer,
+                            BatchNormalization,
+                        )
                     ):
                         bn_layer = succeeding_layer
                 # Make sure a batchnorm layer was found
                 if bn_layer is not None:
                     layer = _fuse_bn_weights(layer, bn_layer)
 
-            if isinstance(params, CrossSimParameters):
-                params_ = params
-            else:
-                params_ = params[idx]
-            if isinstance(bias_rows, int):
-                bias_rows_ = bias_rows
-            else:
-                bias_rows_ = bias_rows[idx]
+            params_ = _val_from_list(params)
+            bias_rows_ = _val_from_list(bias_rows)
 
             analog_layer = _conversion_map[type(layer)].from_keras(
                 layer,
@@ -388,9 +447,20 @@ def _convert_functional_from_keras(model, params, bias_rows, fuse_batchnorm: boo
                 bias_rows_,
             )
             x = analog_layer(x)
+
         # if the layer is a batchnorm layer, skip it
         elif isinstance(layer, BatchNormalization) and fuse_batchnorm:
             continue
+        elif isinstance(layer, Sequential):
+            new_layer = _convert_sequential_from_keras(
+                layer, params, bias_rows, fuse_batchnorm,
+            )
+            x = new_layer(x)
+        elif isinstance(layer, Functional):
+            new_layer = _convert_functional_from_keras(
+                layer, params, bias_rows, fuse_batchnorm,
+            )
+            x = new_layer(x)
         else:
             # Rebuild a new layer to connect to the input tensor
             # and store the output tensor
@@ -412,34 +482,26 @@ def _convert_sequential_to_keras(model, physical_weights):
     new_model = Sequential()
     for layer in model.layers:
         if type(layer) in _conversion_map.values():
-            if isinstance(physical_weights, list):
-                physical_weights_ = physical_weights.pop()
-            else:
-                physical_weights_ = physical_weights
-
+            physical_weights_ = _val_from_list(physical_weights)
             new_layer = type(layer).to_keras(layer, physical_weights_)
-            new_model._layers.append(new_layer)
+        elif isinstance(layer, Sequential):
+            new_layer = _convert_sequential_to_keras(layer, physical_weights)
+        elif isinstance(layer, Functional):
+            new_layer = _convert_functional_to_keras(layer, physical_weights)
         else:
             new_layer = copy(layer)
-            new_model._layers.append(new_layer)
+        new_model._layers.append(new_layer)
     return new_model
 
 
 def _convert_functional_to_keras(model, physical_weights):
-    # Auxiliary dictionary to describe the network graph
-    network_dict = {"input_layers_of": {}, "new_output_tensor_of": {}}
+    if len(model.layers) != len(model.operations):
+        raise NotImplementedError(
+            "Functional models incorporating operations "
+            "rather than layers are not currently supported.",
+        )
 
-    # Set the input layers of each layer
-    for layer in model.layers:
-        for node in layer._outbound_nodes:
-            layer_name = node.operation.name
-            if layer_name not in network_dict["input_layers_of"]:
-                network_dict["input_layers_of"].update({layer_name: [layer.name]})
-            elif layer.name not in network_dict["input_layers_of"][layer_name]:
-                network_dict["input_layers_of"][layer_name].append(layer.name)
-
-    # Set the output tensor of the input layer
-    network_dict["new_output_tensor_of"].update({model.layers[0].name: model.input})
+    network_dict = _create_network_dict(model)
 
     # Iterate over all layers after the inputmodel.summary(*)
     for layer in model.layers[1:]:
@@ -458,13 +520,13 @@ def _convert_functional_to_keras(model, physical_weights):
         x = layer_input
         # If type of layer is in _conversion_map, replace it with analog conversion
         if type(layer) in _conversion_map.values():
-            if isinstance(physical_weights, list):
-                physical_weights_ = physical_weights.pop()
-            else:
-                physical_weights_ = physical_weights
+            physical_weights_ = _val_from_list(physical_weights)
 
             new_layer = type(layer).to_keras(layer, physical_weights_)
-            x = new_layer(x)
+        elif isinstance(layer, Sequential):
+            new_layer = _convert_sequential_to_keras(layer, physical_weights)
+        elif isinstance(layer, Functional):
+            new_layer = _convert_functional_to_keras(layer, physical_weights)
         else:
             # Rebuild a new layer to connect to the input tensor
             # and store the output tensor
@@ -474,9 +536,35 @@ def _convert_functional_to_keras(model, physical_weights):
                 new_layer.set_weights(layer.get_weights())
             # attach new layer to input tensor
             # new_layer's output tensor is stored in x
-            x = new_layer(x)
+        x = new_layer(x)
 
         # Stores the output tensor of the new_layer to network_dict
         network_dict["new_output_tensor_of"].update({layer.name: x})
 
     return Model(inputs=model.inputs, outputs=x)
+
+
+def _create_network_dict(model):
+    # Auxiliary dictionary to describe the network graph
+    network_dict = {"input_layers_of": {}, "new_output_tensor_of": {}}
+
+    # Set the input layers of each layer
+    for layer in model.operations:
+        for node in layer._outbound_nodes:
+            layer_name = node.operation.name
+            if layer_name not in network_dict["input_layers_of"]:
+                network_dict["input_layers_of"].update({layer_name: [layer.name]})
+            elif layer.name not in network_dict["input_layers_of"][layer_name]:
+                network_dict["input_layers_of"][layer_name].append(layer.name)
+
+    # Set the output tensor of the input layer
+    network_dict["new_output_tensor_of"].update({model.layers[0].name: model.input})
+
+    return network_dict
+
+
+def _val_from_list(item):
+    if isinstance(item, list):
+        return item.pop()
+    else:
+        return item

@@ -6,6 +6,15 @@
 # See LICENSE for full license details
 #
 
+"""CrossSim implementation of PyTorch layers.
+
+This interface supports forward and backward computation of Linear, and [1-3]d
+Convolutional layers. Forward operations support all CrossSim features, backward
+operations are fully ideal. All implemented layers support analog or digital bias
+additions and are fully compatible with other digital layers. Conversion to and from
+Torch layers and profiling hooks are also provided.
+"""
+
 from .layer import AnalogLayer
 from .linear import AnalogLinear
 from .conv import AnalogConv1d, AnalogConv2d, AnalogConv3d
@@ -16,4 +25,5 @@ from .convert import (
     analog_modules,
     inconvertible_modules,
     synchronize,
+    reinitialize,
 )

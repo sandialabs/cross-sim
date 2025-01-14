@@ -20,6 +20,18 @@ from interface.dnn_setup import augment_parameters, build_keras_model, model_spe
     get_xy_parallel, get_xy_parallel_parasitics, load_adc_activation_ranges
 from interface.print_configuration_message import print_configuration_message
 
+from warnings import warn
+
+warn(
+(
+    "This CrossSim neural network interface is deprecated as of 3.1 and "
+    "will be removed in version 3.2. Please switch to the new torch or "
+    "keras interaces in the torch and keras directories respectively."
+),
+category=DeprecationWarning,
+stacklevel=1,
+)
+
 # This file shows how to sweep a parameter in a neural network inference simulation
 # and collect data on how the accuracy depends on that parameter.
 # As an example, we sweep the magnitude of the random programming error of the device.
@@ -231,7 +243,9 @@ for p in range(len(alpha_error_vec)):
                     Nslices=config.Nslices,
                     digital_bias=config.digital_bias,
                     analog_batchnorm=analog_batchnorm,
-                    adc_type=config.adc_type)
+                    adc_type=config.adc_type,
+                    input_slice_size=config.input_slice_size,
+                    export_conductances=config.export_conductances)
 
                 if Ncores == 1:
                     paramsList[j] = params
@@ -271,7 +285,9 @@ for p in range(len(alpha_error_vec)):
             dataset_normalization=config.dataset_normalization,
             adc_range_option=config.adc_range_option,
             show_HW_config=config.show_HW_config,
-            return_network_output=config.return_network_output)
+            return_network_output=config.return_network_output,
+            export_conductances=config.export_conductances,
+            conductances_dir=config.conductances_dir)
 
         accuracy_table[p,q,:] = accuracy
 

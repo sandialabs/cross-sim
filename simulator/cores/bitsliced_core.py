@@ -344,7 +344,6 @@ class BitslicedCore(WrapperCore):
                                 )
 
                 if self.analytics_params.profile_adc_inputs:
-
                     if not digital_posneg:
                         num_inputs = output_slices[i].size
                         i1 = self.last_adc_input
@@ -685,6 +684,9 @@ class BitslicedCore(WrapperCore):
             W -= self.Woffset
             if not self.digital_offset:
                 W = W[1:, :]
+        # Unexpand the matrix
+        if self.params.simulation.disable_fast_matmul:
+            W = W[: self.W_shape[0], : self.W_shape[1]]
         W /= self.Wmax
         W /= (pow(2, Wbits - 1) - 1) / pow(2, Wbits - 1)
         W *= 2 * self.max
@@ -736,24 +738,19 @@ class BitslicedCore(WrapperCore):
                     self.core_slices[i][0].expand_matrix(Ncopy)
                     self.core_slices[i][1].expand_matrix(Ncopy)
                 else:
-                    if not self.params.simulation.convolution.weight_reorder:
-                        Nx, Ny = self.W_balanced[i].shape
-                        W_i_temp = self.W_balanced[i].copy()
-                        self.W_balanced[i] = xp.zeros(
-                            (Ncopy * Nx, Ncopy * Ny),
-                            dtype=self.W_balanced[i].dtype,
-                        )
-                        for m in range(Ncopy):
-                            x_start, x_end = m * Nx, (m + 1) * Nx
-                            y_start, y_end = m * Ny, (m + 1) * Ny
-                            self.W_balanced[i][
-                                x_start:x_end,
-                                y_start:y_end,
-                            ] = W_i_temp.copy()
-                    else:
-                        self.W_balanced[i] = self.core_slices[i][0].weight_reorder(
-                            self.W_balanced[i].copy(),
-                        )
+                    Nx, Ny = self.W_balanced[i].shape
+                    W_i_temp = self.W_balanced[i].copy()
+                    self.W_balanced[i] = xp.zeros(
+                        (Ncopy * Nx, Ncopy * Ny),
+                        dtype=self.W_balanced[i].dtype,
+                    )
+                    for m in range(Ncopy):
+                        x_start, x_end = m * Nx, (m + 1) * Nx
+                        y_start, y_end = m * Ny, (m + 1) * Ny
+                        self.W_balanced[i][
+                            x_start:x_end,
+                            y_start:y_end,
+                        ] = W_i_temp.copy()
 
     def unexpand_matrix(self):
         # Calls unexpand_matrix in the inner cores

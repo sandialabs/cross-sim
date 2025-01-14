@@ -64,6 +64,14 @@ class SONOS(EmptyDevice):
         else:
             self.Imin = self.Imax / self.on_off_ratio
 
+        #### Check that parameters are within the range of the model
+        if self.Imax > 3200:
+            raise ValueError(
+                "When using any SONOS error model, please set "
+                + "xbar.device.Rmin and xbar.device.Vread so that the max "
+                + "SONOS current is <= 3200 nA.",
+            )
+
     def _calculate_current(self, input_):
         """Computes matrix of SONOS cell currents that map a matrix of normalized input values
         Current is treated equivalently to conductance here since the drain-source
@@ -223,6 +231,14 @@ class SONOS(EmptyDevice):
         return I, A, B
 
     def drift_error(self, input_, time):
+        #### Check that parameters are within the range of the model
+        if time > 0 and self.Imax >= 1800:
+            raise ValueError(
+                "When using the SONOS drift error model, "
+                + "please set xbar.device.Rmin and xbar.device.Vread so that the "
+                + "max SONOS current is <= 1800 nA.",
+            )
+
         """Apply the complete error: mean drift and variability."""
         I = self._calculate_current(input_)
 

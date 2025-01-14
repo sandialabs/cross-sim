@@ -31,12 +31,23 @@ class PCMJoshi(EmptyDevice):
         self.distribution = NormalError(self.Grange_norm)
 
         # Max conductance in PCM model
-        self.Gmax = 25.0  # microSiemens (uS)
+        self.Gmax = 1 / self.device_params.Rmin
+
+        # Convert to microSiemens
+        self.Gmax *= 1e6
+
         self.Gmin = self.Gmax / self.on_off_ratio if self.on_off_ratio != 0 else 0
 
         # In Joshi et al, the initial time (programming time) is 27.36s after programming
         # Fit coefficients, quadaratic fit to the data in Fig. 3(b)
         self.A, self.B, self.C = -0.00178767, 0.07585724, 0.28638599
+
+        #### Check that parameters are within the range of the model
+        if self.Gmax > 25:
+            raise ValueError(
+                "When using the PCMJoshi error model, please set "
+                + "xbar.device.Rmin so that Gmax is <= 25 uS.",
+            )
 
     def programming_error(self, input_):
         """Apply the PCM programming error based on Fig. 3(b)."""

@@ -32,6 +32,7 @@ from simulator.backend import ComputeBackend
 from simulator.parameters.core_parameters import (
     PartitionStrategy,
     CoreStyle,
+    BalancedCoreStyle,
     OutputDType,
 )
 
@@ -155,6 +156,18 @@ class AnalogCore:
         elif self.params.core.output_dtype == OutputDType.FLOAT16:
             self.output_type = self._explicit_dtype
             self._output_type = xp.float16
+        elif self.params.core.output_dtype == OutputDType.INT64:
+            self.output_type = self._explicit_dtype
+            self._output_type = xp.int64
+        elif self.params.core.output_dtype == OutputDType.INT32:
+            self.output_type = self._explicit_dtype
+            self._output_type = xp.int32
+        elif self.params.core.output_dtype == OutputDType.INT16:
+            self.output_type = self._explicit_dtype
+            self._output_type = xp.int16
+        elif self.params.core.output_dtype == OutputDType.INT8:
+            self.output_type = self._explicit_dtype
+            self._output_type = xp.int8
 
         # This protects from the case where AnalogCore is a 1D vector which breaks
         # complex equivalent expansion. This could probably be fixed but it is a
@@ -311,11 +324,11 @@ class AnalogCore:
             # Precompute a list of row/col partition information (id, start, end)
             # This is used to aggreagate partitions in every other function
             self.row_partition_bounds: list[tuple[int, int, int]] = [
-                (r, np.sum(self.NrowsVec[:r]), np.sum(self.NrowsVec[: r + 1]))
+                (r, int(np.sum(self.NrowsVec[:r])), int(np.sum(self.NrowsVec[: r + 1])))
                 for r in range(self.num_cores_row)
             ]
             self.col_partition_bounds: list[tuple[int, int, int]] = [
-                (c, np.sum(self.NcolsVec[:c]), np.sum(self.NcolsVec[: c + 1]))
+                (c, int(np.sum(self.NcolsVec[:c])), int(np.sum(self.NcolsVec[: c + 1])))
                 for c in range(self.num_cores_col)
             ]
 
@@ -366,6 +379,10 @@ class AnalogCore:
 
         self.dtype = matrix.dtype
 
+        # Now that we've captured the data type, convert integers to float32s
+        if xp.issubdtype(self.dtype, xp.integer):
+            matrix = matrix.astype(xp.float32)
+
         # Break up complex matrix into real and imaginary quadrants
         if self.complex_valued:
             Nx, Ny = matrix.shape
@@ -393,13 +410,31 @@ class AnalogCore:
                 warn(
                     (
                         "Partial matrix update contains values outside of weight "
-                        "range. These values will be clipped. To remove this wanring, "
+                        "range. These values will be clipped. To remove this warning, "
                         "set the weight range to contain the full range of expected "
-                        "parital matrix updates."
+                        "partial matrix updates."
                     ),
                     category=RuntimeWarning,
                     stacklevel=2,
                 )
+
+        # Warn about a small numeric error if using BALANCED and TWO_SIDED
+        if (
+            self.params.core.style == CoreStyle.BALANCED
+            and self.params.core.balanced.style == BalancedCoreStyle.TWO_SIDED
+            and self.params.xbar.device.cell_bits > 0
+            and self.dtype != xp.int8
+        ):
+            warn(
+                (
+                    "When using BALANCED core with the TWO_SIDED style, there may "
+                    "be a small numerical error due to a misalignment in the quantized"
+                    "conductance levels. This will be fixed in a future update. To remove "
+                    "this warning, use the ONE_SIDED style."
+                ),
+                category=RuntimeWarning,
+                stacklevel=2,
+            )
 
         # Clip the matrix values
         # This is done at this level so that matrix partitions are not separately
@@ -467,7 +502,6 @@ class AnalogCore:
                                 error_mask[1].stop - col_start,
                                 error_mask[1].step,
                             )
-
                         error_mask_ = (
                             slice(*row_mask.indices(row_end - row_start)),
                             slice(*col_mask.indices(col_end - col_start)),
@@ -497,12 +531,12 @@ class AnalogCore:
             matrix = xp.zeros((self.nrow, self.ncol))
             for row, row_start, row_end in self.row_partition_bounds:
                 for col, col_start, col_end in self.col_partition_bounds:
-                    matrix[row_start:row_end, col_start:col_end] = self.cores[row][
-                        col
-                    ]._read_matrix()
+                    matrix[row_start:row_end, col_start:col_end] = xp.asarray(
+                        self.cores[row][col]._read_matrix(),
+                    )
 
         if not self.complex_valued:
-            return matrix
+            return self._convert_output_type(matrix, self.dtype)
         else:
             Nx, Ny = matrix.shape[0] // 2, matrix.shape[1] // 2
             m_real = matrix[0:Nx, 0:Ny]
@@ -525,7 +559,7 @@ class AnalogCore:
             1D Numpy-like array result of matrix-vector multiplication.
         """
         # If complex, concatenate real and imaginary part of input
-        vec = xp.asarray(vec)
+        vec = self._ensure_data_format(vec)
 
         if vec.shape != (self.shape[1],) and vec.shape != (self.shape[1], 1):
             raise ValueError(
@@ -567,7 +601,7 @@ class AnalogCore:
             output_imag = output[N:]
             output = output_real + 1j * output_imag
 
-        return output.astype(self.output_type(vec.dtype))
+        return self._convert_output_type(output, self.output_type(vec.dtype))
 
     def matmat(self, mat: npt.ArrayLike) -> npt.NDArray:
         """Perform right matrix-matrix (AX = B) multiply on programmed matrix.
@@ -583,7 +617,7 @@ class AnalogCore:
         Returns:
             >=2D Numpy-like array result of matrix-matrix multiplication.
         """
-        mat = xp.asarray(mat)
+        mat = self._ensure_data_format(mat)
 
         if self.shape[1] != mat.shape[-2]:
             raise ValueError(
@@ -644,7 +678,7 @@ class AnalogCore:
             output_imag = output[int(self.nrow // 2) :]
             output = output_real + 1j * output_imag
 
-        return output.astype(self.output_type(mat.dtype))
+        return self._convert_output_type(output, self.output_type(mat.dtype))
 
     def vecmat(self, vec: npt.ArrayLike) -> npt.NDArray:
         """Perform vector-matrix (xA = b) multiply on programmed vector (1D).
@@ -660,7 +694,7 @@ class AnalogCore:
         Returns:
             1D Numpy-like array result of vector-matrix multiplication.
         """
-        vec = xp.asarray(vec)
+        vec = self._ensure_data_format(vec)
 
         if vec.shape != (self.shape[0],) and vec.shape != (1, self.shape[0]):
             raise ValueError(
@@ -701,7 +735,7 @@ class AnalogCore:
             output_imag = output[:N]
             output = output_real + 1j * output_imag
 
-        return output.astype(self.output_type(vec.dtype))
+        return self._convert_output_type(output, self.output_type(vec.dtype))
 
     def rmatmat(self, mat: npt.ArrayLike) -> npt.NDArray:
         """Perform left matrix-matrix (XA = B) multiply on programmed matrix.
@@ -717,7 +751,7 @@ class AnalogCore:
         Returns:
             >=2D Numpy-like array result of matrix-matrix multiplication.
         """
-        mat = xp.asarray(mat)
+        mat = self._ensure_data_format(mat)
 
         if self.shape[0] != mat.shape[-1]:
             raise ValueError(
@@ -762,7 +796,7 @@ class AnalogCore:
             output_imag = output[:, int(self.ncol // 2) :]
             output = output_real - 1j * output_imag
 
-        return output.astype(self.output_type(mat.dtype))
+        return self._convert_output_type(output, self.output_type(mat.dtype))
 
     def matmul(self, x: npt.ArrayLike) -> npt.NDArray:
         """Numpy-like np.matmul function for N-D inputs.
@@ -780,7 +814,7 @@ class AnalogCore:
         Returns:
             An N-D numpy-like array result.
         """
-        x = xp.asarray(x)
+        x = self._ensure_data_format(x)
 
         # Technically ndim=2 (N,1) inputs are also "vectors" but by they require a
         # different output shape which is handled correctly if they go through the
@@ -820,7 +854,7 @@ class AnalogCore:
         Returns:
             An N-D numpy-like array result.
         """
-        x = xp.asarray(x)
+        x = self._ensure_data_format(x)
 
         # As with dot, sending all ndim == 2 to matmat fixes some shape inconsistency
         # when compared to numpy
@@ -849,7 +883,7 @@ class AnalogCore:
         Returns:
             An N-D numpy-like array result.
         """
-        x = xp.asarray(x)
+        x = self._ensure_data_format(x)
 
         # Technically ndim=2 (N,1) inputs are also "vectors" but by they require a
         # different output shape which is handled correctly if they go through the
@@ -890,7 +924,7 @@ class AnalogCore:
         Returns:
             An N-D numpy-like array result.
         """
-        x = xp.asarray(x)
+        x = self._ensure_data_format(x)
 
         # As with dot, sending all ndim == 2 to matmat fixes some shape inconsistency
         # when compared to numpy
@@ -923,7 +957,7 @@ class AnalogCore:
         Returns:
             NDArray: ...
         """
-        vec = xp.asarray(vec)
+        vec = self._ensure_data_format(vec)
 
         if self.complex_valued:
             raise NotImplementedError(
@@ -949,8 +983,8 @@ class AnalogCore:
             output = xp.zeros((Ncopy, self.nrow))
             for i in range(self.num_cores_col):
                 output_i = xp.zeros((Ncopy, self.nrow))
-                i_start = np.sum(self.NcolsVec[:i])
-                i_end = np.sum(self.NcolsVec[: i + 1])
+                i_start = np.sum(self.NcolsVec[:i]).astype(int)
+                i_end = np.sum(self.NcolsVec[: i + 1]).astype(int)
                 vec_i = vec[:, i_start:i_end].flatten()
                 for j in range(self.num_cores_row):
                     j_start = int(np.sum(self.NrowsVec[:j]))
@@ -960,7 +994,10 @@ class AnalogCore:
                         (Ncopy, j_start - j_end),
                     )
                 output += output_i
-            return output.flatten().astype(self.output_type(vec.dtype))
+            return self._convert_output_type(
+                output.flatten(),
+                self.output_type(vec.dtype),
+            )
 
     def transpose(self) -> AnalogCore:
         return TransposedCore(parent=self)
@@ -975,7 +1012,7 @@ class AnalogCore:
 
     def __setitem__(self, key, value):
         rslice, cslice, full_mask, _ = self._create_mask(key)
-        expanded_mat = self.get_matrix()
+        expanded_mat = xp.asarray(self.get_matrix())
         expanded_mat[rslice, cslice] = xp.asarray(value)
         error_mask = None if full_mask else (rslice, cslice)
         self.set_matrix(expanded_mat, error_mask=error_mask)
@@ -1060,6 +1097,17 @@ class AnalogCore:
 
     def _explicit_dtype(self, input_dtype: npt.DTypeLike) -> npt.DTypeLike:
         return self._output_type
+
+    def _convert_output_type(self, output, output_dtype):
+        if xp.issubdtype(output_dtype, xp.integer):
+            output = xp.rint(output)
+        return output.astype(output_dtype)
+
+    def _ensure_data_format(self, array):
+        array = xp.asarray(array)
+        if xp.issubdtype(self.dtype, xp.integer):
+            array = array.astype(xp.float32)
+        return array
 
     @staticmethod
     def _set_limits_percentile(constraints, input_, reset=False):
@@ -1281,7 +1329,7 @@ class MaskedCore(AnalogCore):
 
     def set_matrix(self, matrix: npt.ArrayLike, verbose: bool = False, error_mask=None):
         # TODO: Do we need to do anything with error_mask here?
-        expanded_mat = self.parent.get_matrix()
+        expanded_mat = xp.asarray(self.parent.get_matrix())
         expanded_mat[self.rslice, self.cslice] = xp.asarray(matrix)
         self.parent.set_matrix(
             expanded_mat,

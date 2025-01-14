@@ -21,6 +21,8 @@ from ...cores.analog_core import AnalogCore
 from ...parameters.core_parameters import CoreStyle, BitSlicedCoreStyle
 from ...backend import ComputeBackend
 
+from warnings import warn
+
 xp = ComputeBackend()
 
 
@@ -37,6 +39,16 @@ class DNN:
                 fully connected layers should be specified as:
                     ( (1,1,n_in),(1,1,n_hidden1), ...,(1,1,n_out)) OR ( n_in,n_hidden1, ...,n_out).
         """
+        warn(
+            (
+                "This CrossSim neural network interface is deprecated as of 3.1 and "
+                "will be removed in version 3.2. Please switch to the new torch or "
+                "keras interaces in the torch and keras directories respectively."
+            ),
+            category=DeprecationWarning,
+            stacklevel=1,
+            )
+
         self.layers = []
         for layer in layers:
             if type(layer) == int:
