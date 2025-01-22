@@ -28,3 +28,9 @@ class CrossSimParameters(BaseParameters):
     core: CoreParameters = None
     simulation: SimulationParameters = None
     xbar: XbarParameters = None
+
+    def validate(self) -> None:
+        super().validate()
+        self.core.validate()
+        self.simulation.validate()
+        self.xbar.validate()

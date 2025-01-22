@@ -280,4 +280,6 @@ def set_params(**kwargs):
                 elif not params.xbar.adc.mvm.signed and adc_type == "generic":
                     params.xbar.adc.mvm.model = "QuantizerADC"
 
+    params.validate()
+
     return params

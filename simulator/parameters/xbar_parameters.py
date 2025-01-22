@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any
 from .base_parameters import BaseParameters, BasePairedParameters
@@ -259,7 +259,7 @@ class ADCParameters(BaseParameters):
     signed: bool = True
     stochastic_rounding: bool = False
     adc_per_ibit: bool = False
-    calibrated_range: list = None
+    calibrated_range: list = field(default_factory=list)
     adc_range_option: ADCRangeLimits = ADCRangeLimits.CALIBRATED
 
     # TODO: Quick little hack for swapping param objects, just till 3.1 changes

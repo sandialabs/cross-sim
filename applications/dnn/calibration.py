@@ -72,6 +72,7 @@ def calibrate_adc_limits(
     all_adc_inputs: list,
     Nbits: int = 0,
     norm_ord: float = 1.0,
+    bitslice_pct: float = 99.99,
 ) -> npt.ArrayLike:
     """Optimizes the ADC input range for all layers in a network given profiled
     input values.
@@ -84,28 +85,38 @@ def calibrate_adc_limits(
         Nbits: quantization resolution used in optimizer
             Set to 0 to set range based on max profiled value
         norm_ord: power of the error norm used for the loss function in optimizer
+            (Used for unsliced core only)
+        bitslice_pct: desired percentile coverage of input distribution that is used to
+            find ADC ranges. (Used for bitsliced core only)
     Returns:
         NumPy array containing the (min, max) range for the inputs of every layer
     """
 
-    n_layers = len(all_adc_inputs)
-    adc_limits = np.zeros((n_layers, 2))
-    k = 0
 
+    n_layers = len(all_adc_inputs)
+    if analog_layers[0].params.core.style != CoreStyle.BITSLICED:
+        adc_limits = np.zeros((n_layers, 2))
+    else:
+        # Allows non-uniform bit slice width across layers
+        adc_limits = [None] * n_layers
+
+    k = 0
     for layer in analog_layers:
         adc_inputs_k = xp.asarray(all_adc_inputs[k])
 
         if layer.params.core.style != CoreStyle.BITSLICED:
-            adc_limits_k = optimize_adc_limits_unsliced(
+            adc_limits[k, :] = optimize_adc_limits_unsliced(
                 adc_inputs_k, Nbits=Nbits, norm_ord=norm_ord
             )
         else:
             num_slices = layer.params.core.bit_sliced.num_slices
-            adc_limits_k = optimize_adc_limits_bitsliced(
-                adc_inputs_k, num_slices, Nbits=Nbits, norm_ord=norm_ord
+            adc_limits[k] = optimize_adc_limits_bitsliced(
+                adc_inputs_k,
+                num_slices,
+                style = layer.params.core.bit_sliced.style,
+                Nrows = Nrows,
+                pct = bitslice_pct,
             )
-
-        adc_limits[k, :] = adc_limits_k
         k += 1
 
     return adc_limits
@@ -148,18 +159,44 @@ def optimize_adc_limits_unsliced(
 def optimize_adc_limits_bitsliced(
     adc_inputs_k: npt.ArrayLike,
     num_slices: int = 2,
-    Nbits: int = 0,
-    norm_ord: float = 1.0,
+    style: int = BitSlicedCoreStyle.BALANCED,
+    Nrows: int = 1,
+    pct: float = 99.99,
 ) -> npt.ArrayLike:
-    """Optimizes the ADC input range for one layer which uses weight bit slicing."""
+    """
+    Optimizes the ADC input range for one layer which uses weight bit slicing.
+    To reduce the overhead of bit slice digital post-processing, this method ensures
+    that the ratio of the ADC limits of any two bit slices must be a power of 2.
+    """
 
-    # Although input bit slices are profiled separately, the current calibration
+    # NOTE: Although input bit slices are profiled separately, the current calibration
     # method does not resolve data by input bit
 
-    raise NotImplementedError(
-        "ADC limits calibration with weight bit slicing has "
-        + "not been implemented in the PyTorch interface yet."
-    )
+    adc_limits_k = np.zeros((num_slices, 2))
+
+    if style == BitSlicedCoreStyle.OFFSET:
+        raise NotImplementedError(
+            "ADC limits auto-calibration with weight bit slicing OFFSET "
+            + "style not been implemented yet."
+        )
+
+    for i_slice in range(num_slices):
+        adc_inputs_ik = adc_inputs_k[i_slice,:,:].flatten()
+        adc_inputs_ik /= Nrows
+
+        # Find the percentile extreme values of the ADC input distribution
+        p_neg = xp.percentile(adc_inputs_ik, 100-pct)
+        p_pos = xp.percentile(adc_inputs_ik, pct)
+        p_out = xp.maximum(xp.abs(p_neg),xp.abs(p_pos))
+
+        # Compute how much the ADC limits can be divided from the maximum possible,
+        # and still cover the percentile extreme values
+        clip_power_i = xp.floor(xp.log2(1/p_out)).astype(int)
+        adc_limits_k[i_slice,0] = -Nrows / 2**clip_power_i
+        adc_limits_k[i_slice,1] = Nrows / 2**clip_power_i
+
+    return adc_limits_k
+
 
 
 def quantizationError_ReLU(eta, x, Nbits, norm_ord):

@@ -325,5 +325,7 @@ def dnn_inference_params(**kwargs):
                     params.xbar.adc.mvm.model = "SignMagnitudeADC"
                 elif not params.xbar.adc.mvm.signed and adc_type == "generic":
                     params.xbar.adc.mvm.model = "QuantizerADC"
-                    
+    
+    params.validate()
+
     return params

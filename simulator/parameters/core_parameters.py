@@ -89,6 +89,10 @@ class OutputDType(IntEnum):
     "FLOAT32": Use backends float32 (xp.float32)
     "FLOAT64": Use backends float64 (xp.float64)
     "FLOAT16": Use backends float16 (xp.float16)
+    "INT64"" : Use backends int64 (xp.int64)
+    "INT32"" : Use backends int32 (xp.int32)
+    "INT16"" : Use backends int16 (xp.int16)
+    "INT8"" : Use backends int8 (xp.int8)
     """
 
     NATIVE = 1
@@ -97,6 +101,10 @@ class OutputDType(IntEnum):
     FLOAT32 = 4
     FLOAT64 = 5
     FLOAT16 = 6
+    INT64 = 7
+    INT32 = 8
+    INT16 = 9
+    INT8 = 10
 
 
 @dataclass(repr=False)
@@ -117,8 +125,8 @@ class CoreParameters(BaseParameters):
     """
 
     style: CoreStyle = CoreStyle.BALANCED
-    rows_max: int = 1024
-    cols_max: int = 1024
+    rows_max: int = 0
+    cols_max: int = 0
     weight_bits: int = 0
     complex_matrix: bool = False
     complex_input: bool = False

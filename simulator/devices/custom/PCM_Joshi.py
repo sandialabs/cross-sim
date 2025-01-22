@@ -63,9 +63,18 @@ class PCMJoshi(EmptyDevice):
 
         # Convert back to CrossSim normalized weight units
         sigma_W = sigma_G / (self.Gmax - self.Gmin)
-        random_matrix = self.distribution.create_error(input_)
-        random_matrix *= sigma_W
-        return input_ + sigma_W
+
+        if sigma_W.any():
+            randMat = xp.random.normal(
+                scale=self.Grange_norm,
+                size=input_.shape,
+            ).astype(input_.dtype)
+            input_ = input_ + sigma_W * randMat
+
+            # Make sure resulting conductance is non-negative
+            input_ = input_.clip(0, None)
+
+        return input_
 
     def drift_error(self, input_, time):
         # No drift model
