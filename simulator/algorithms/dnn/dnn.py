@@ -7,6 +7,7 @@
 
 import time
 import numpy as np
+import pickle
 from .activate import Activate, RECTLINEAR, STYLES
 from .convolution import Convolution
 from .dnn_util import (
@@ -16,6 +17,7 @@ from .dnn_util import (
     apply_quantization,
     init_GPU_util,
     decode_from_key,
+    corestyle_str,
 )
 from ...cores.analog_core import AnalogCore
 from ...parameters.core_parameters import CoreStyle, BitSlicedCoreStyle
@@ -1187,3 +1189,101 @@ class DNN:
             W_s = weight_dict[self.auxLayerParams[ilayer]["name"]][0]
             W_s = xp.array(W_s)
             self.scale_values[ilayer] = W_s
+
+    # -------------------------------------------------------
+    # Save all the array conductances to a file
+    # Conductances are normalized (i.e. values are G/G_max) and will include
+    # any applied quantization, programming errors, and drift
+    # -------------------------------------------------------
+    def export_conductances(self, conductances_dir):
+
+        # Structure of the created list
+        # 1) Top level: a list of length = # layers
+        # 2) For each layer, there is a dictionary:
+        #   'layer_name' : the name of the layer
+        #   'core_style' : mapping style of the core ("BALANCED", "OFFSET", "BITSLICED")
+        #   'bitsliced_core' : mapping style of each bit slice core ("NONE", "BALANCED", "OFFSET")
+        #   'num_slices' : number of bit slices
+        #   'Gmats' : contains the array conductances
+        # 3) 'Gmats' is a list of length = # row partitions x # column partitions
+        # 4) For each partition:
+        #   4a) If not using weight bit slicing, there is a dictionary
+        #       4a-1) If using balanced core, 'Gmat_pos' and 'Gmat_neg' contains the array conductances for
+        #           the positive and negative weight sub-arrays, respectively
+        #       4a-2) If using offset core, 'Gmat' contains the array conductances for the single offset core
+        #   4b) If using weight bit slicing, each partition has a list with length = # slices
+        #       For each slice, there is a dictionary
+        #       The entries of the dictionary depend on whether bit sliced core uses balanced or offset, same as above
+
+        Gmats = []
+        for ilayer in range(self.nlayer):
+            if self.layerTypes[ilayer] not in ("conv", "dense"):
+                continue
+            Gmat_i = {}
+            cores = self.ncores[ilayer].cores
+            params_i = self.ncores[ilayer].params
+            Ncores_r = self.ncores[ilayer].num_cores_row
+            Ncores_c = self.ncores[ilayer].num_cores_col
+            Gmat_i["layer_name"] = self.auxLayerParams[ilayer]["name"]
+            style_str = corestyle_str(
+                params_i.core.style, params_i.core.bit_sliced.style
+            )
+            Gmat_i["core_style"] = style_str[0]
+            Gmat_i["bitsliced_core_style"] = style_str[1]
+            Gmat_i["num_slices"] = (
+                params_i.core.bit_sliced.num_slices
+                if params_i.core.style == CoreStyle.BITSLICED
+                else 1
+            )
+            Gmat_i["Gmats"] = []
+
+            # Check for fail condition
+            fast_balanced = params_i.simulation.fast_balanced
+            cond1 = params_i.core.style == CoreStyle.BALANCED and fast_balanced
+            cond2 = (
+                params_i.core.style == CoreStyle.BITSLICED
+                and params_i.core.bit_sliced.style == BitSlicedCoreStyle.BALANCED
+                and fast_balanced
+            )
+            if cond1 or cond2:
+                raise ValueError(
+                    "To export conductances, please set "
+                    "params.simulation.disable_fast_balanced = True"
+                )
+
+            # Iterate through all arrays
+            for r in range(Ncores_r):
+                for c in range(Ncores_c):
+                    Gmat_rc = {}
+                    if params_i.core.style == CoreStyle.BALANCED:
+                        Gmat_rc["Gmat_pos"] = cores[r][c].core_pos._read_matrix()
+                        Gmat_rc["Gmat_neg"] = cores[r][c].core_neg._read_matrix()
+                    elif params_i.core.style == CoreStyle.OFFSET:
+                        Gmat_rc["Gmat"] = cores[r][c].core._read_matrix()
+                    elif params_i.core.style == CoreStyle.BITSLICED:
+                        Gmat_rc = []
+                        for islice in range(params_i.core.bit_sliced.num_slices):
+                            Gmat_slice = {}
+                            if (
+                                params_i.core.bit_sliced.style
+                                == BitSlicedCoreStyle.BALANCED
+                            ):
+                                Gmat_slice["Gmat_pos"] = (
+                                    cores[r][c].core_slices[islice][0]._read_matrix()
+                                )
+                                Gmat_slice["Gmat_neg"] = (
+                                    cores[r][c].core_slices[islice][1]._read_matrix()
+                                )
+                            elif (
+                                params_i.core.bit_sliced.style
+                                == BitSlicedCoreStyle.OFFSET
+                            ):
+                                Gmat_slice["Gmat"] = (
+                                    cores[r][c].core_slices[islice][0]._read_matrix()
+                                )
+                            Gmat_rc.append(Gmat_slice)
+                    Gmat_i["Gmats"].append(Gmat_rc)
+            Gmats.append(Gmat_i)
+
+        # Save to file
+        pickle.dump(Gmats, open(conductances_dir + "G_matrices.p", "wb"))
