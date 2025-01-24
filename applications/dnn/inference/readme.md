@@ -1,3 +1,7 @@
+### As of CrossSim v3.1, this neural network inference interface is marked deprecated.
+- This interface is also incompatible with TensorFlow version 2.16+ (there will be errors when loading Keras model configurations).
+- For neural network inference, please use one of the new interfaces: ``/applications/dnn/keras`` or ``/applications/dnn/torch``
+
 # Neural network inference
 
 This directory contains CrossSim's neural network inference interface. For a full documentation of CrossSim Inference, please see the [inference manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual_v2.0.pdf). The manual is currently being updated, but is still mostly up-to-date.
@@ -10,7 +14,6 @@ Notable changes to CrossSim Inference in V3.0:
 - There is a large performance improvement for convolutional neural network (CNNs) simulations, when not using read noise or parasitic resistance models. For the simplest analog hardware simulation settings on an Nvidia A100 GPU, CrossSim simulates ImageNet/ResNet-50 at a speed of 23.0 ms/image.
 - There is an option to inspect the analog accelerator configuration including the number and size of arrays used in all neural network layers. To enable, set ``show_HW_config = True`` in ``inference_config.py``.
 - In addition to classification accuracy, the outputs from the last layer of the neural network can be returned and saved. This is valuable for a variety of use cases, such as regression problems. To enable, set ``return_network_outputs = True`` in ``inference_config.py``.
-- There is also an option to save the simulated conductance values for all the arrays used to implement the DNN. The saved conductances are in normalized conductance units (normalized by the max conductance) and include the effects of cell resolution, random programming errors, and random drift, but not read noise. To enable, set ``export_conductances = True`` and specify the desired path for the saved conductance data (``conductance_dir``) in ``inference_config.py``. For the container structure for the saved conductances, see the docstring for ``DNN.export_conductances`` in ``/simulator/algorithms/dnn/dnn.py``.
 - ADC ranges and profiled ADC inputs are all in units of _normalized current_, rather than algorithm units, so that they are more useful to hardware designers. A normalized current of ``1`` means the MVM summed current is equal to 1x the maximum current through a single device (i.e. max conductance and max voltage).
 
 ## Running inference simulations

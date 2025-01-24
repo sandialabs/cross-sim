@@ -54,13 +54,23 @@ class SONOS(EmptyDevice):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Convert xbar normalized conductances to real PCM conductances
         # Max SONOS current to use for weight storage
-        self.Imax = 1600.0  # nanoAmps
+        self.Gmin = 1 / self.device_params.Rmax
+        self.Gmax = 1 / self.device_params.Rmin
+        self.Imax = self.Gmax * self.device_params.Vread
+        self.Imax *= 1e9  # nanoAmps
         if self.on_off_ratio == 0:
             self.Imin = 0
         else:
             self.Imin = self.Imax / self.on_off_ratio
+
+        #### Check that parameters are within the range of the model
+        if self.Imax > 3200:
+            raise ValueError(
+                "When using any SONOS error model, please set "
+                + "xbar.device.Rmin and xbar.device.Vread so that the max "
+                + "SONOS current is <= 3200 nA.",
+            )
 
     def _calculate_current(self, input_):
         """Computes matrix of SONOS cell currents that map a matrix of normalized input values
@@ -221,6 +231,14 @@ class SONOS(EmptyDevice):
         return I, A, B
 
     def drift_error(self, input_, time):
+        #### Check that parameters are within the range of the model
+        if time > 0 and self.Imax >= 1800:
+            raise ValueError(
+                "When using the SONOS drift error model, "
+                + "please set xbar.device.Rmin and xbar.device.Vread so that the "
+                + "max SONOS current is <= 1800 nA.",
+            )
+
         """Apply the complete error: mean drift and variability."""
         I = self._calculate_current(input_)
 

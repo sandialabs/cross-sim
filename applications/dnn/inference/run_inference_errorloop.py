@@ -20,6 +20,18 @@ from interface.dnn_setup import augment_parameters, build_keras_model, model_spe
     get_xy_parallel, get_xy_parallel_parasitics, load_adc_activation_ranges
 from interface.print_configuration_message import print_configuration_message
 
+from warnings import warn
+
+warn(
+(
+    "This CrossSim neural network interface is deprecated as of 3.1 and "
+    "will be removed in version 3.2. Please switch to the new torch or "
+    "keras interaces in the torch and keras directories respectively."
+),
+category=DeprecationWarning,
+stacklevel=1,
+)
+
 # This file shows how to sweep a parameter in a neural network inference simulation
 # and collect data on how the accuracy depends on that parameter.
 # As an example, we sweep the magnitude of the random programming error of the device.

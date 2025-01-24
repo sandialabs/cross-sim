@@ -16,7 +16,9 @@ from .generic_device import (
 )
 from .custom.PCM_Joshi import PCMJoshi
 from .custom.RRAM_Milo import RRAMMilo
+from .custom.RRAM_Wan import RRAMWan
 from .custom.SONOS import SONOS
+
 from simulator.circuits import array_simulator
 from typing import Any
 

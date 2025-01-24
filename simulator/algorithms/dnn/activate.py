@@ -7,6 +7,7 @@
 
 import numpy as np
 from ...backend import ComputeBackend
+from warnings import warn
 
 xp = ComputeBackend()
 
@@ -57,6 +58,16 @@ class Activate:
     """Activation models, implemented numerically."""
 
     def __init__(self, **kwargs):
+        warn(
+            (
+                "This CrossSim neural network interface is deprecated as of 3.1 and "
+                "will be removed in version 3.2. Please switch to the new torch or "
+                "keras interaces in the torch and keras directories respectively."
+            ),
+            category=DeprecationWarning,
+            stacklevel=1,
+            )
+
         if "style" not in kwargs:
             error("Style setting required")
         # Required

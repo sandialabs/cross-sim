@@ -41,6 +41,7 @@ def set_params(**kwargs):
     Rmin = kwargs.get("Rmin", 1000)
     Rmax = kwargs.get("Rmax", 10000)
     infinite_on_off_ratio = kwargs.get("infinite_on_off_ratio", False)
+    Vread = kwargs.get("Vread",0.1)
 
     NrowsMax = kwargs.get("NrowsMax",None)
     NcolsMax = kwargs.get("NcolsMax",None)
@@ -105,6 +106,7 @@ def set_params(**kwargs):
     params.xbar.device.Rmin = Rmin
     params.xbar.device.Rmax = Rmax
     params.xbar.device.infinite_on_off_ratio = infinite_on_off_ratio
+    params.xbar.device.Vread = Vread
 
     ########### Device errors
 
@@ -277,5 +279,7 @@ def set_params(**kwargs):
                     params.xbar.adc.mvm.model = "SignMagnitudeADC"
                 elif not params.xbar.adc.mvm.signed and adc_type == "generic":
                     params.xbar.adc.mvm.model = "QuantizerADC"
+
+    params.validate()
 
     return params

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from .base_parameters import BaseParameters
 
-from .core_parameters import CoreStyle
+from .core_parameters import CoreStyle, BitSlicedCoreStyle
 
 
 @dataclass(
@@ -62,7 +62,9 @@ class SimulationParameters(BaseParameters):
         if self.disable_fast_balanced:
             return False
         params = self.root
-        if params.core.style != CoreStyle.BALANCED:
+        if (params.core.style != CoreStyle.BALANCED) and \
+            not (params.core.style == CoreStyle.BITSLICED and \
+            params.core.bit_sliced.style == BitSlicedCoreStyle.BALANCED):
             return False
         if (
             params.xbar.device.read_noise.enable
@@ -100,32 +102,14 @@ class ConvolutionParameters(BaseParameters):
 
     Attributes:
         is_conv_core (bool): Flag to mark core as a convolution core
-        stride (int): Stride length of the kernel
-        Kx (int): Conv filter size x
-        Ky (int): Conv filter size y
-        Noc (int): Number of output channels
-        Nic (int): Number of input channels
         x_par (int): Number of sliding window in x to pack into one MVM
         y_par (int): Number of sliding window in y to pack into one MVM
-        conv_matmul (bool): Whether to implement convolutions in one shot using
-            AnalogCore's matrix-matrix multiplication interface
-        weight_reorder (bool): Whether to enable weight reordering in conductance
-            matrix to improve performance when using sliding window packing
-        bias_row (bool): Whether to have a bias row
         Nwindows (int): Total number of sliding windows per CNN input example
     """
 
     is_conv_core: bool = False
-    stride: int = 1
-    Kx: int = 3
-    Ky: int = 3
-    Noc: int = 1
-    Nic: int = 1
     x_par: int = 1
     y_par: int = 1
-    weight_reorder: bool = False
-    conv_matmul: bool = False
-    bias_row: bool = False
     Nwindows: int = 1
 
 
@@ -134,11 +118,14 @@ class AnalyticsParameters(BaseParameters):
     """Parameters for capturing analytics.
 
     Attributes:
+        profile_xbar_inputs (bool): Profile array digital inputs inside AnalogCore,
+            to be saved and used for optimal calibration of input ranges
         profile_adc_inputs (bool): Profile pre-ADC input values inside core, to be
             saved and used for optimal calibration of ADC ranges
         ntest (int): Number of images in dataset, used to allocate storage for ADC
             input profiling
     """
 
+    profile_xbar_inputs: bool = False
     profile_adc_inputs: bool = False
     ntest: int = 0

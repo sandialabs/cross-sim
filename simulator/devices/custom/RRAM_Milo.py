@@ -18,21 +18,29 @@ class RRAMMilo(EmptyDevice):
     IEEE International Reliability Physics Symposium (IRPS), 2021.
     https://ieeexplore.ieee.org/document/9405119.
 
-    SUGGESTED ON/OFF RATIO : 4.5 (50 to 225 uS)
-    The programming error model is based on Fig. 4 of the paper.
+    The programming error model uses a linear fit to the data in Fig. 4 of the paper for
+    conductances in the 50-225 uS range.
 
     """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # Max conductance in ReRAM model
-        self.Gmax = 225  # microsiemens (uS)
+        # Max conductance in PCM model
+        self.Gmax = 1 / self.device_params.Rmin
 
-        if self.on_off_ratio == 0:
-            self.Gmin = 0
-        else:
-            self.Gmin = self.Gmax / self.on_off_ratio
+        # Convert to microSiemens
+        self.Gmax *= 1e6
+
+        self.Gmin = self.Gmax / self.on_off_ratio if self.on_off_ratio != 0 else 0
+
+        #### Check that parameters are within the range of the model
+        if self.Gmax > 225 or self.Gmin < 50:
+            raise ValueError(
+                "When using the RRAMMilo error model, please set "
+                + "xbar.device.Rmin so that Gmax is <= 225 uS, and "
+                + "xbar.device.Rmax so that Gmin is >= 50 uS.",
+            )
 
     def programming_error(self, input_):
         # Convert xbar normalized conductances to real ReRAM conductance (uS)

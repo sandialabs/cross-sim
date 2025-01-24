@@ -57,6 +57,7 @@ class BitslicedCore(WrapperCore):
 
         self.adc_params = self.params.xbar.adc
         self.dac_params = self.params.xbar.dac
+        self.analytics_params = self.params.simulation.analytics
         self.Icol_max = self.params.xbar.array.Icol_max
         self.clip_Icol = self.params.xbar.array.Icol_max > 0
 
@@ -158,7 +159,12 @@ class BitslicedCore(WrapperCore):
                         G_unit = ((2**self.Wbits_slice) // 2) / (
                             2**self.Wbits_slice - 1
                         )
-                    W_i = np.insert(W_i, 0, G_unit, axis=0)
+
+                    # For some reason, cupy does not have an insert method
+                    if self.params.simulation.useGPU:
+                        W_i = xp.asarray(np.insert(W_i.get(), 0, G_unit, axis=0))
+                    else:
+                        W_i = np.insert(W_i, 0, G_unit, axis=0)
 
                 if self.Gmin_norm > 0:
                     W_i = self.Gmin_norm + W_i * Wrange_xbar
@@ -195,7 +201,7 @@ class BitslicedCore(WrapperCore):
 
         # If profiling ADC inputs, initialize data structure here now that matrix dimensions are known
         # Currently assuming profiling is only done for MVMs
-        if self.params.simulation.analytics.profile_adc_inputs:
+        if self.analytics_params.profile_adc_inputs:
             if self.dac_params.mvm.input_bitslicing:
                 magbits = self.params.xbar.dac.mvm.bits
                 if self.params.xbar.dac.mvm.signed:
@@ -205,20 +211,15 @@ class BitslicedCore(WrapperCore):
             Nout_mvm = matrix.shape[0]
             if not self.subtract_current_in_xbar:
                 Nout_mvm *= 2
-            Nmvms = self.params.simulation.analytics.ntest
-            if self.params.simulation.convolution.is_conv_core:
-                Nmvms *= self.params.simulation.convolution.Nwindows
-            self.outputs_per_op = Nout_mvm
-            if (
-                self.params.simulation.convolution.conv_matmul
-                and self.params.simulation.convolution.is_conv_core
-            ):
-                self.outputs_per_op *= self.params.simulation.convolution.Nwindows
+            Nmvms = self.analytics_params.ntest
 
+            # For convolutions, the size of the second dimension will be further scaled on the
+            # first mvm call, when the number of sliding windows per input is known
             self.adc_inputs = xp.zeros(
                 (Nslices, magbits, Nmvms * Nout_mvm),
                 dtype=xp.float32,
             )
+            self.last_adc_input = 0
 
     def _wrapper_set_vmm_inputs(self, vector):
         vec_dac = self.dac.vmm.convert(vector)
@@ -274,6 +275,22 @@ class BitslicedCore(WrapperCore):
             output_slices_pos = [None for i in range(Nslices)]
             output_slices_neg = [None for i in range(Nslices)]
 
+        # Update the dimensions of adc_inputs as soon as # windows is known
+        if (
+            self.analytics_params.profile_adc_inputs
+            and self.last_adc_input == 0
+            and self.params.simulation.convolution.is_conv_core
+        ):
+            self.adc_inputs = xp.zeros(
+                (
+                    self.adc_inputs.shape[0],
+                    self.adc_inputs.shape[1],
+                    self.adc_inputs.shape[2]
+                    * self.params.simulation.convolution.Nwindows,
+                ),
+                dtype=xp.float32,
+            )
+
         ################################
         ##  ANALOG INPUT ENCODING
         ################################
@@ -291,9 +308,9 @@ class BitslicedCore(WrapperCore):
                 else:
                     if self.params.simulation.fast_balanced:
                         if op == "mvm":
-                            output_slices[i] = xp.dot(self.W_balanced[i], vector)
+                            output_slices[i] = xp.matmul(self.W_balanced[i], vector)
                         else:
-                            output_slices[i] = xp.dot(vector, self.W_balanced[i])
+                            output_slices[i] = xp.matmul(vector, self.W_balanced[i])
                     else:
                         if not self.interleaved_posneg:
                             output_pos = getattr(self.core_slices[i][0], function)()
@@ -326,15 +343,19 @@ class BitslicedCore(WrapperCore):
                                     self.Icol_max,
                                 )
 
-                if self.params.simulation.analytics.profile_adc_inputs:
-                    i1 = self.i_op * self.outputs_per_op
-                    i2 = i1 + self.outputs_per_op
+                if self.analytics_params.profile_adc_inputs:
                     if not digital_posneg:
+                        num_inputs = output_slices[i].size
+                        i1 = self.last_adc_input
+                        i2 = self.last_adc_input + num_inputs
                         self.adc_inputs[i, 0, i1:i2] = xp.array(
                             output_slices[i].flatten(),
                             dtype=xp.float32,
                         )
                     else:
+                        num_inputs = 2 * output_slices_pos[i].size
+                        i1 = self.last_adc_input
+                        i2 = self.last_adc_input + num_inputs
                         self.adc_inputs[i, 0, i1:i2] = xp.array(
                             xp.concatenate(
                                 (
@@ -369,12 +390,12 @@ class BitslicedCore(WrapperCore):
                     else:
                         if self.params.simulation.fast_balanced:
                             if op == "mvm":
-                                output_i_k = xp.dot(
+                                output_i_k = xp.matmul(
                                     self.W_balanced[i],
                                     vector_slices[k],
                                 )
                             else:
-                                output_i_k = xp.dot(
+                                output_i_k = xp.matmul(
                                     vector_slices[k],
                                     self.W_balanced[i],
                                 )
@@ -415,15 +436,19 @@ class BitslicedCore(WrapperCore):
                                         self.Icol_max,
                                     )
 
-                    if self.params.simulation.analytics.profile_adc_inputs:
-                        i1 = self.i_op * self.outputs_per_op
-                        i2 = i1 + self.outputs_per_op
+                    if self.analytics_params.profile_adc_inputs:
                         if not digital_posneg:
+                            num_inputs = output_i_k.size
+                            i1 = self.last_adc_input
+                            i2 = self.last_adc_input + num_inputs
                             self.adc_inputs[i, k, i1:i2] = xp.array(
                                 output_i_k.flatten(),
                                 dtype=xp.float32,
                             )
                         else:
+                            num_inputs = 2 * output_i_k_pos.size
+                            i1 = self.last_adc_input
+                            i2 = self.last_adc_input + num_inputs
                             self.adc_inputs[i, k, i1:i2] = xp.array(
                                 xp.concatenate(
                                     (
@@ -479,6 +504,9 @@ class BitslicedCore(WrapperCore):
 
         self.i_op += 1
 
+        if self.analytics_params.profile_adc_inputs:
+            self.last_adc_input += num_inputs
+
         # Clip and quantize result
         if not self.adc_per_ibit:
             if not digital_posneg:
@@ -518,9 +546,21 @@ class BitslicedCore(WrapperCore):
                         Gmin_bias = self.Gmin_norm * xp.sum(vector)
                     else:
                         if op == "mvm":
-                            Gmin_bias = self.Gmin_norm * xp.sum(vector, axis=0)
+                            if len(vector.shape) == 3:
+                                Gmin_bias = (
+                                    self.Gmin_norm * xp.sum(vector, axis=1)[:, None, :]
+                                )
+                            else:
+                                Gmin_bias = self.Gmin_norm * xp.sum(vector, axis=0)
                         else:
-                            Gmin_bias = self.Gmin_norm * xp.sum(vector, axis=1)[:, None]
+                            if len(vector.shape) == 3:
+                                Gmin_bias = (
+                                    self.Gmin_norm * xp.sum(vector, axis=2)[:, :, None]
+                                )
+                            else:
+                                Gmin_bias = (
+                                    self.Gmin_norm * xp.sum(vector, axis=1)[:, None]
+                                )
                 for i in range(Nslices):
                     output_slices[i] = (output_slices[i] - Gmin_bias) / Wrange_xbar
 
@@ -544,13 +584,25 @@ class BitslicedCore(WrapperCore):
                         output_slices[i] = output_slices[i][1:] - output_slices[i][0]
                     else:
                         if op == "mvm":
-                            output_slices[i] = (
-                                output_slices[i][1:, :] - output_slices[i][0, :]
-                            )
+                            if len(vector.shape) == 3:
+                                output_slices[i] = (
+                                    output_slices[i][:, 1:, :]
+                                    - output_slices[i][:, 0, :][:, None, :]
+                                )
+                            else:
+                                output_slices[i] = (
+                                    output_slices[i][1:, :] - output_slices[i][0, :]
+                                )
                         else:
-                            output_slices[i] = (
-                                output_slices[i][:, 1:] - output_slices[i][:, 0]
-                            )
+                            if len(vector.shape) == 3:
+                                output_slices[i] = (
+                                    output_slices[i][:, :, 1:]
+                                    - output_slices[i][:, :, 0][:, :, None]
+                                )
+                            else:
+                                output_slices[i] = (
+                                    output_slices[i][:, 1:] - output_slices[i][:, 0]
+                                )
 
         # Aggregate bit slices
         output = output_slices[0]
@@ -579,9 +631,15 @@ class BitslicedCore(WrapperCore):
                     output -= self.Woffset * xp.sum(vector)
                 else:
                     if op == "mvm":
-                        output -= self.Woffset * xp.sum(vector, axis=0)
+                        if len(vector.shape) == 3:
+                            output -= self.Woffset * xp.sum(vector, axis=1)[:, None, :]
+                        else:
+                            output -= self.Woffset * xp.sum(vector, axis=0)
                     else:
-                        output -= self.Woffset * xp.sum(vector, axis=1)[:, None]
+                        if len(vector.shape) == 3:
+                            output -= self.Woffset * xp.sum(vector, axis=2)[:, :, None]
+                        else:
+                            output -= self.Woffset * xp.sum(vector, axis=1)[:, None]
 
         output /= self.Wmax
         output /= (pow(2, Wbits - 1) - 1) / pow(2, Wbits - 1)
@@ -626,6 +684,9 @@ class BitslicedCore(WrapperCore):
             W -= self.Woffset
             if not self.digital_offset:
                 W = W[1:, :]
+        # Unexpand the matrix
+        if self.params.simulation.disable_fast_matmul:
+            W = W[: self.W_shape[0], : self.W_shape[1]]
         W /= self.Wmax
         W /= (pow(2, Wbits - 1) - 1) / pow(2, Wbits - 1)
         W *= 2 * self.max
@@ -677,24 +738,19 @@ class BitslicedCore(WrapperCore):
                     self.core_slices[i][0].expand_matrix(Ncopy)
                     self.core_slices[i][1].expand_matrix(Ncopy)
                 else:
-                    if not self.params.simulation.convolution.weight_reorder:
-                        Nx, Ny = self.W_balanced[i].shape
-                        W_i_temp = self.W_balanced[i].copy()
-                        self.W_balanced[i] = xp.zeros(
-                            (Ncopy * Nx, Ncopy * Ny),
-                            dtype=self.W_balanced[i].dtype,
-                        )
-                        for m in range(Ncopy):
-                            x_start, x_end = m * Nx, (m + 1) * Nx
-                            y_start, y_end = m * Ny, (m + 1) * Ny
-                            self.W_balanced[i][
-                                x_start:x_end,
-                                y_start:y_end,
-                            ] = W_i_temp.copy()
-                    else:
-                        self.W_balanced[i] = self.core_slices[i][0].weight_reorder(
-                            self.W_balanced[i].copy(),
-                        )
+                    Nx, Ny = self.W_balanced[i].shape
+                    W_i_temp = self.W_balanced[i].copy()
+                    self.W_balanced[i] = xp.zeros(
+                        (Ncopy * Nx, Ncopy * Ny),
+                        dtype=self.W_balanced[i].dtype,
+                    )
+                    for m in range(Ncopy):
+                        x_start, x_end = m * Nx, (m + 1) * Nx
+                        y_start, y_end = m * Ny, (m + 1) * Ny
+                        self.W_balanced[i][
+                            x_start:x_end,
+                            y_start:y_end,
+                        ] = W_i_temp.copy()
 
     def unexpand_matrix(self):
         # Calls unexpand_matrix in the inner cores

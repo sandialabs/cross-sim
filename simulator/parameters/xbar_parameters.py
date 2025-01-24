@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any
 from .base_parameters import BaseParameters, BasePairedParameters
@@ -71,6 +71,8 @@ class DeviceParameters(BaseParameters):
         cell_bits (int): Programmable bit resolution of device conductance
         Rmin (float): Minimum programmable resistance of the device in ohms
         Rmax (float): Maximum programmable resistance of the device in ohms
+        Vread (float): Voltage used to convert conductance to current during MVM.
+            This is currently used for SONOS only
         infinite_on_off_ratio (bool): Whether to assume infinite conductance
             On/Off ratio. If True, simulates the case of infinite Rmax.
         read_noise (WeightErrorParameters): Parameters for device read noise
@@ -85,6 +87,7 @@ class DeviceParameters(BaseParameters):
     cell_bits: int = 0
     Rmin: float = 1000
     Rmax: float = 10000
+    Vread: float = 0.1
     time: int | float = 0
     infinite_on_off_ratio: bool = False
     clip_conductance: bool = False
@@ -256,7 +259,7 @@ class ADCParameters(BaseParameters):
     signed: bool = True
     stochastic_rounding: bool = False
     adc_per_ibit: bool = False
-    calibrated_range: list = None
+    calibrated_range: list = field(default_factory=list)
     adc_range_option: ADCRangeLimits = ADCRangeLimits.CALIBRATED
 
     # TODO: Quick little hack for swapping param objects, just till 3.1 changes

@@ -29,7 +29,12 @@ from simulator.parameters import CrossSimParameters
 from . import BalancedCore, OffsetCore, BitslicedCore, NumericCore
 
 from simulator.backend import ComputeBackend
-from simulator.parameters.core_parameters import PartitionStrategy, CoreStyle
+from simulator.parameters.core_parameters import (
+    PartitionStrategy,
+    CoreStyle,
+    BalancedCoreStyle,
+    OutputDType,
+)
 
 
 import numpy.typing as npt
@@ -120,12 +125,6 @@ class AnalogCore:
         # Floating point epsilons come up occasionally so just store it here
         self._eps = xp.finfo(float).eps
 
-        # This protects from the case where AnalogCore is a 1D vector which breaks
-        # complex equivalent expansion. This could probably be fixed but it is a
-        # sufficiently unusual case that just throw an error for now.
-        if matrix.ndim == 1 or any(i == 1 for i in matrix.shape):
-            raise ValueError("AnalogCore must 2 dimensional")
-
         # params used in AnalogCore
         self.complex_valued = (
             self.params.core.complex_matrix or self.params.core.complex_input
@@ -140,6 +139,43 @@ class AnalogCore:
         self.vmm_input_percentile_scaling = (
             self.params.core.mapping.inputs.vmm.percentile is not None
         )
+
+        # set the output type for this core
+        if self.params.core.output_dtype == OutputDType.NATIVE:
+            self.output_type = self._native_dtype
+        elif self.params.core.output_dtype == OutputDType.MATRIX:
+            self.output_type = self._matrix_dtype
+        elif self.params.core.output_dtype == OutputDType.INPUT:
+            self.output_type = self._input_dtype
+        elif self.params.core.output_dtype == OutputDType.FLOAT32:
+            self.output_type = self._explicit_dtype
+            self._output_type = xp.float32
+        elif self.params.core.output_dtype == OutputDType.FLOAT64:
+            self.output_type = self._explicit_dtype
+            self._output_type = xp.float64
+        elif self.params.core.output_dtype == OutputDType.FLOAT16:
+            self.output_type = self._explicit_dtype
+            self._output_type = xp.float16
+        elif self.params.core.output_dtype == OutputDType.INT64:
+            self.output_type = self._explicit_dtype
+            self._output_type = xp.int64
+        elif self.params.core.output_dtype == OutputDType.INT32:
+            self.output_type = self._explicit_dtype
+            self._output_type = xp.int32
+        elif self.params.core.output_dtype == OutputDType.INT16:
+            self.output_type = self._explicit_dtype
+            self._output_type = xp.int16
+        elif self.params.core.output_dtype == OutputDType.INT8:
+            self.output_type = self._explicit_dtype
+            self._output_type = xp.int8
+
+        # This protects from the case where AnalogCore is a 1D vector which breaks
+        # complex equivalent expansion. This could probably be fixed but it is a
+        # sufficiently unusual case that just throw an error for now.
+        if self.complex_valued and (
+            matrix.ndim == 1 or any(i == 1 for i in matrix.shape)
+        ):
+            raise ValueError("AnalogCore must 2 dimensional")
 
         # AnalogCore has slice objects to simplify core operation stacking
         self.rslice = None
@@ -288,11 +324,11 @@ class AnalogCore:
             # Precompute a list of row/col partition information (id, start, end)
             # This is used to aggreagate partitions in every other function
             self.row_partition_bounds: list[tuple[int, int, int]] = [
-                (r, np.sum(self.NrowsVec[:r]), np.sum(self.NrowsVec[: r + 1]))
+                (r, int(np.sum(self.NrowsVec[:r])), int(np.sum(self.NrowsVec[: r + 1])))
                 for r in range(self.num_cores_row)
             ]
             self.col_partition_bounds: list[tuple[int, int, int]] = [
-                (c, np.sum(self.NcolsVec[:c]), np.sum(self.NcolsVec[: c + 1]))
+                (c, int(np.sum(self.NcolsVec[:c])), int(np.sum(self.NcolsVec[: c + 1])))
                 for c in range(self.num_cores_col)
             ]
 
@@ -343,6 +379,10 @@ class AnalogCore:
 
         self.dtype = matrix.dtype
 
+        # Now that we've captured the data type, convert integers to float32s
+        if xp.issubdtype(self.dtype, xp.integer):
+            matrix = matrix.astype(xp.float32)
+
         # Break up complex matrix into real and imaginary quadrants
         if self.complex_valued:
             Nx, Ny = matrix.shape
@@ -370,13 +410,31 @@ class AnalogCore:
                 warn(
                     (
                         "Partial matrix update contains values outside of weight "
-                        "range. These values will be clipped. To remove this wanring, "
+                        "range. These values will be clipped. To remove this warning, "
                         "set the weight range to contain the full range of expected "
-                        "parital matrix updates."
+                        "partial matrix updates."
                     ),
                     category=RuntimeWarning,
                     stacklevel=2,
                 )
+
+        # Warn about a small numeric error if using BALANCED and TWO_SIDED
+        if (
+            self.params.core.style == CoreStyle.BALANCED
+            and self.params.core.balanced.style == BalancedCoreStyle.TWO_SIDED
+            and self.params.xbar.device.cell_bits > 0
+            and self.dtype != xp.int8
+        ):
+            warn(
+                (
+                    "When using BALANCED core with the TWO_SIDED style, there may "
+                    "be a small numerical error due to a misalignment in the quantized"
+                    "conductance levels. This will be fixed in a future update. To remove "
+                    "this warning, use the ONE_SIDED style."
+                ),
+                category=RuntimeWarning,
+                stacklevel=2,
+            )
 
         # Clip the matrix values
         # This is done at this level so that matrix partitions are not separately
@@ -444,7 +502,6 @@ class AnalogCore:
                                 error_mask[1].stop - col_start,
                                 error_mask[1].step,
                             )
-
                         error_mask_ = (
                             slice(*row_mask.indices(row_end - row_start)),
                             slice(*col_mask.indices(col_end - col_start)),
@@ -474,12 +531,12 @@ class AnalogCore:
             matrix = xp.zeros((self.nrow, self.ncol))
             for row, row_start, row_end in self.row_partition_bounds:
                 for col, col_start, col_end in self.col_partition_bounds:
-                    matrix[row_start:row_end, col_start:col_end] = self.cores[row][
-                        col
-                    ]._read_matrix()
+                    matrix[row_start:row_end, col_start:col_end] = xp.asarray(
+                        self.cores[row][col]._read_matrix(),
+                    )
 
         if not self.complex_valued:
-            return matrix
+            return self._convert_output_type(matrix, self.dtype)
         else:
             Nx, Ny = matrix.shape[0] // 2, matrix.shape[1] // 2
             m_real = matrix[0:Nx, 0:Ny]
@@ -502,7 +559,7 @@ class AnalogCore:
             1D Numpy-like array result of matrix-vector multiplication.
         """
         # If complex, concatenate real and imaginary part of input
-        vec = xp.asarray(vec)
+        vec = self._ensure_data_format(vec)
 
         if vec.shape != (self.shape[1],) and vec.shape != (self.shape[1], 1):
             raise ValueError(
@@ -544,30 +601,25 @@ class AnalogCore:
             output_imag = output[N:]
             output = output_real + 1j * output_imag
 
-        return output
+        return self._convert_output_type(output, self.output_type(vec.dtype))
 
     def matmat(self, mat: npt.ArrayLike) -> npt.NDArray:
-        """Perform right matrix-matrix (AX = B) multiply on programmed matrix (2D).
+        """Perform right matrix-matrix (AX = B) multiply on programmed matrix.
 
-        Primary simulation function for 2D inputs. Transforms the matrix for analog
+        Primary simulation function for >=2D inputs. Transforms the matrix for analog
         simulation and calls the underlying core simulation functions for each
         sub-core.  Without errors this should be identical to ``A.matmul(mat)`` or
         ``A @ mat`` where A is the numpy array programmed with set_matrix().
 
         Args:
-            mat: 2D Numpy-like array to be multiplied.
+            mat: >=2D Numpy-like array to be multiplied.
 
         Returns:
-            2D Numpy-like array result of matrix-matrix multiplication.
+            >=2D Numpy-like array result of matrix-matrix multiplication.
         """
-        mat = xp.asarray(mat)
+        mat = self._ensure_data_format(mat)
 
-        if mat.ndim != 2:
-            raise ValueError(
-                f"Expected 2d matrix, got {mat.ndim}d input",
-            )
-
-        if self.shape[1] != mat.shape[0]:
+        if self.shape[1] != mat.shape[-2]:
             raise ValueError(
                 f"Dimension mismatch: {self.shape}, {mat.shape}",
             )
@@ -587,15 +639,36 @@ class AnalogCore:
                 reset=True,
             )
 
+        # Numpy handles N-D inputs as a stack of matrices of the trailing 2
+        # dimensions. This is the key to understanding the code below. For the
+        # indexing we start from the 2D case and then build a stack.
         if self.Ncores == 1:
             output = self.cores[0][0].run_xbar_mvm(mcopy, input_range)
 
         else:
-            output = xp.zeros((self.nrow, mat.shape[1]))
+            # The output is a stack of matrices based with a shape based on the
+            # Matmul of input trailing 2 dims and the 2 stored. Therefore, to
+            # size the output, it is the leading dimensions of the input, and
+            # the size derived from standard output sizing. In the 2D case
+            # there is no leading dimension, so it is just nrow, mat.shape[1].
+            # Recall that nrow is self.shape[0] (modulo complex values), so
+            # this naturally follows from basic matrix behavior.
+            output = xp.zeros((*mat.shape[:-2], self.nrow, mat.shape[-1]))
+            # The indexing is attempting to select N-D chunks from mat_in and
+            # output. So we want to take all the leading dimensions as given
+            # and then select part of the 2nd to last dimension, and the full
+            # final dimension. The `...` symbol means take all leading
+            # dimensions before the specified dimensions (last 2). In the 2D
+            # case this is equivalent to [start:end] which shorthands
+            # [start:end, :]. We need to be explicit about the trailing
+            # dimension here so the `...` captures the correct number of
+            # leading dimensions.
             for row, row_start, row_end in self.row_partition_bounds:
                 for col, col_start, col_end in self.col_partition_bounds:
-                    mat_in = mcopy[col_start:col_end]
-                    output[row_start:row_end] += self.cores[row][col].run_xbar_mvm(
+                    mat_in = mcopy[..., col_start:col_end, :]
+                    output[..., row_start:row_end, :] += self.cores[row][
+                        col
+                    ].run_xbar_mvm(
                         mat_in,
                         input_range,
                     )
@@ -605,7 +678,7 @@ class AnalogCore:
             output_imag = output[int(self.nrow // 2) :]
             output = output_real + 1j * output_imag
 
-        return output
+        return self._convert_output_type(output, self.output_type(mat.dtype))
 
     def vecmat(self, vec: npt.ArrayLike) -> npt.NDArray:
         """Perform vector-matrix (xA = b) multiply on programmed vector (1D).
@@ -621,7 +694,7 @@ class AnalogCore:
         Returns:
             1D Numpy-like array result of vector-matrix multiplication.
         """
-        vec = xp.asarray(vec)
+        vec = self._ensure_data_format(vec)
 
         if vec.shape != (self.shape[0],) and vec.shape != (1, self.shape[0]):
             raise ValueError(
@@ -662,30 +735,25 @@ class AnalogCore:
             output_imag = output[:N]
             output = output_real + 1j * output_imag
 
-        return output
+        return self._convert_output_type(output, self.output_type(vec.dtype))
 
     def rmatmat(self, mat: npt.ArrayLike) -> npt.NDArray:
-        """Perform left matrix-matrix (XA = B) multiply on programmed matrix (2D).
+        """Perform left matrix-matrix (XA = B) multiply on programmed matrix.
 
-        Primary simulation function for 2D inputs. Transforms the matrix for analog
+        Primary simulation function for >=2D inputs. Transforms the matrix for analog
         simulation and calls the underlying core simulation functions for each
         sub-core.  Without errors this should be identical to ``mat.matmul(A)`` or
         ``mat @ A`` where A is the numpy array programmed with set_matrix().
 
         Args:
-            mat: 2D Numpy-like array to be multiplied.
+            mat: >=2D Numpy-like array to be multiplied.
 
         Returns:
-            2D Numpy-like array result of matrix-matrix multiplication.
+            >=2D Numpy-like array result of matrix-matrix multiplication.
         """
-        mat = xp.asarray(mat)
+        mat = self._ensure_data_format(mat)
 
-        if mat.ndim != 2:
-            raise ValueError(
-                f"Expected 2d matrix, got {mat.ndim}d input",
-            )
-
-        if self.shape[0] != mat.shape[1]:
+        if self.shape[0] != mat.shape[-1]:
             raise ValueError(
                 f"Dimension mismatch: {mat.shape}, {self.shape}",
             )
@@ -705,15 +773,20 @@ class AnalogCore:
                 reset=True,
             )
 
+        # For explanation of >2D see matmat, this is conceptually the same just
+        # with the dimensions flipped. Actually simpler because we don't need
+        # the transposes.
         if self.Ncores == 1:
             output = self.cores[0][0].run_xbar_vmm(mcopy, input_range)
 
         else:
-            output = xp.zeros((mat.shape[0], self.ncol))
+            output = xp.zeros((*mat.shape[:-1], self.ncol))
             for row, row_start, row_end in self.row_partition_bounds:
                 for col, col_start, col_end in self.col_partition_bounds:
-                    mat_in = mcopy[:, row_start:row_end]
-                    output[:, col_start:col_end] += self.cores[row][col].run_xbar_vmm(
+                    mat_in = mcopy[..., :, row_start:row_end]
+                    output[..., :, col_start:col_end] += self.cores[row][
+                        col
+                    ].run_xbar_vmm(
                         mat_in,
                         input_range,
                     )
@@ -723,31 +796,32 @@ class AnalogCore:
             output_imag = output[:, int(self.ncol // 2) :]
             output = output_real - 1j * output_imag
 
-        return output
+        return self._convert_output_type(output, self.output_type(mat.dtype))
 
-    def dot(self, x: npt.ArrayLike) -> npt.NDArray:
-        """Numpy-like ndarray.dot() function for 1D and 2D inputs.
+    def matmul(self, x: npt.ArrayLike) -> npt.NDArray:
+        """Numpy-like np.matmul function for N-D inputs.
 
-        Performs a 1D or 2D matrix dot product with the programmed matrix. For 2D
+        Performs an N-D matrix dot product with the programmed matrix. For >=2D
         inputs this will decompose the matrix into a series for 1D inputs or use a
         (generally faster) matrix-matrix approximation if possible given the simulation
-        parameters. In the error free case this should be identical to A.dot(x) where A
-        is the numpy array programmed with set_matrix().
+        parameters. In the error free case this should be identical to
+        ``np.matmul(A, x)`` or ``A @ x`` where A is the numpy array programmed with
+        set_matrix().
 
         Args:
-            x: A 1D or 2D numpy-like array to be multiplied.
+            x: An N-D numpy-like array to be multiplied.
 
         Returns:
-            A 1D or 2D numpy-like array result.
+            An N-D numpy-like array result.
         """
-        x = xp.asarray(x)
+        x = self._ensure_data_format(x)
 
         # Technically ndim=2 (N,1) inputs are also "vectors" but by they require a
         # different output shape which is handled correctly if they go through the
         # matmat path instead.
         if x.ndim == 1:
             return self.matvec(x)
-        elif x.ndim == 2:
+        else:
             # Stacking fails for shape (X, 0), revert to matmat which handles this
             # Empty matix is weird so ignoring user preference here
             if not (self.fast_matmul or x.shape[1] == 0):
@@ -763,39 +837,106 @@ class AnalogCore:
                 )
             else:
                 return self.matmat(x)
-        else:
-            raise ValueError("Input must be 1D or 2D")
 
-    def rdot(self, x: npt.ArrayLike) -> npt.NDArray:
-        """Numpy-like ndarray.dot() function for 1D and 2D inputs.
+    def rmatmul(self, x: npt.ArrayLike) -> npt.NDArray:
+        """Numpy-like np.matmul function for N-D inputs.
 
-        Performs a 1D or 2D matrix dot product with the programmed matrix. For 2D
+        Performs an N-D matrix dot product with the programmed matrix. For >=2D
         inputs this will decompose the matrix into a series for 1D inputs or use a
         (generally faster) matrix-matrix approximation if possible given the simulation
-        parameters. In the error free case this should be identical to x.dot(A) where A
-        is the numpy array programmed with set_matrix().
+        parameters. In the error free case this should be identical to
+        ``np.matmul(x, A)`` or ``x @ A`` where A is the numpy array programmed with
+        set_matrix().
 
         Args:
-            x: A 1D or 2D numpy-like array to be multiplied.
+            x: An N-D numpy-like array to be multiplied.
 
         Returns:
-            A 1D or 2D numpy-like array result.
+            An N-D numpy-like array result.
         """
-        x = xp.asarray(x)
+        x = self._ensure_data_format(x)
 
         # As with dot, sending all ndim == 2 to matmat fixes some shape inconsistency
         # when compared to numpy
         if x.ndim == 1:
             return self.vecmat(x)
-        elif x.ndim == 2:
+        else:
             # Stacking fails for shape (0, X), revert to matmat which handles this
             # Empty matix is weird so ignoring user preference here
             if not (self.fast_matmul or x.shape[0] == 0):
                 return xp.vstack([self.vecmat(row) for row in x])
             else:
                 return self.rmatmat(x)
+
+    def dot(self, x: npt.ArrayLike) -> npt.NDArray:
+        """Numpy-like ndarray.dot function for N-D inputs.
+
+        Performs an N-D matrix dot product with the programmed matrix. For >=2D
+        inputs this will decompose the matrix into a series for 1D inputs or use a
+        (generally faster) matrix-matrix approximation if possible given the simulation
+        parameters. In the error free case this should be identical to ``A.dot(x)`` or
+        ``np.dot(A,x)`` where A is the numpy array programmed with set_matrix().
+
+        Args:
+            x: An N-D numpy-like array to be multiplied.
+
+        Returns:
+            An N-D numpy-like array result.
+        """
+        x = self._ensure_data_format(x)
+
+        # Technically ndim=2 (N,1) inputs are also "vectors" but by they require a
+        # different output shape which is handled correctly if they go through the
+        # matmat path instead.
+        if x.ndim == 1:
+            return self.matvec(x)
         else:
-            raise ValueError("Input must be 1D or 2D")
+            # Stacking fails for shape (X, 0), revert to matmat which handles this
+            # Empty matix is weird so ignoring user preference here
+            if not (self.fast_matmul or x.shape[1] == 0):
+                return xp.hstack(
+                    [
+                        self.matvec(
+                            col.reshape(
+                                -1,
+                            ),
+                        ).reshape(-1, 1)
+                        for col in x.T
+                    ],
+                )
+            else:
+                return self.matmat(x).transpose(
+                    (x.ndim - 2, *np.arange(0, x.ndim - 2), x.ndim - 1),
+                )
+
+    def rdot(self, x: npt.ArrayLike) -> npt.NDArray:
+        """Numpy-like ndarray.dot() function for N-D inputs.
+
+        Performs an N-D matrix dot product with the programmed matrix. For >=2D
+        inputs this will decompose the matrix into a series for 1D inputs or use a
+        (generally faster) matrix-matrix approximation if possible given the simulation
+        parameters. In the error free case this should be identical to ``x.dot(A)`` or
+        ``np.dot(x, A)`` where A is the numpy array programmed with set_matrix().
+
+        Args:
+            x: An N-D numpy-like array to be multiplied.
+
+        Returns:
+            An N-D numpy-like array result.
+        """
+        x = self._ensure_data_format(x)
+
+        # As with dot, sending all ndim == 2 to matmat fixes some shape inconsistency
+        # when compared to numpy
+        if x.ndim == 1:
+            return self.vecmat(x)
+        else:
+            # Stacking fails for shape (0, X), revert to matmat which handles this
+            # Empty matix is weird so ignoring user preference here
+            if not (self.fast_matmul or x.shape[0] == 0):
+                return xp.vstack([self.vecmat(row) for row in x])
+            else:
+                return self.rmatmat(x)
 
     def mat_multivec(self, vec: npt.ArrayLike) -> npt.NDArray:
         """Perform matrix-vector multiply on multiple analog vectors packed into the
@@ -816,7 +957,7 @@ class AnalogCore:
         Returns:
             NDArray: ...
         """
-        vec = xp.asarray(vec)
+        vec = self._ensure_data_format(vec)
 
         if self.complex_valued:
             raise NotImplementedError(
@@ -842,18 +983,21 @@ class AnalogCore:
             output = xp.zeros((Ncopy, self.nrow))
             for i in range(self.num_cores_col):
                 output_i = xp.zeros((Ncopy, self.nrow))
-                i_start = np.sum(self.NcolsVec[:i])
-                i_end = np.sum(self.NcolsVec[: i + 1])
+                i_start = np.sum(self.NcolsVec[:i]).astype(int)
+                i_end = np.sum(self.NcolsVec[: i + 1]).astype(int)
                 vec_i = vec[:, i_start:i_end].flatten()
                 for j in range(self.num_cores_row):
-                    j_start = np.sum(self.NrowsVec[:j])
-                    j_end = np.sum(self.NrowsVec[: j + 1])
+                    j_start = int(np.sum(self.NrowsVec[:j]))
+                    j_end = int(np.sum(self.NrowsVec[: j + 1]))
                     output_ij = self.cores[j][i].run_xbar_mvm(vec_i.copy())
                     output_i[:, j_start:j_end] = output_ij.reshape(
                         (Ncopy, j_start - j_end),
                     )
                 output += output_i
-            return output.flatten()
+            return self._convert_output_type(
+                output.flatten(),
+                self.output_type(vec.dtype),
+            )
 
     def transpose(self) -> AnalogCore:
         return TransposedCore(parent=self)
@@ -868,7 +1012,7 @@ class AnalogCore:
 
     def __setitem__(self, key, value):
         rslice, cslice, full_mask, _ = self._create_mask(key)
-        expanded_mat = self.get_matrix()
+        expanded_mat = xp.asarray(self.get_matrix())
         expanded_mat[rslice, cslice] = xp.asarray(value)
         error_mask = None if full_mask else (rslice, cslice)
         self.set_matrix(expanded_mat, error_mask=error_mask)
@@ -941,6 +1085,30 @@ class AnalogCore:
 
         return (rslice, cslice, full_mask, flatten)
 
+    # Output dtype methods
+    def _native_dtype(self, input_dtype: npt.DTypeLike) -> npt.DTypeLike:
+        return xp.promote_types(self.dtype, input_dtype)
+
+    def _matrix_dtype(self, input_dtype: npt.DTypeLike) -> npt.DTypeLike:
+        return self.dtype
+
+    def _input_dtype(self, input_dtype: npt.DTypeLike) -> npt.DTypeLike:
+        return input_dtype
+
+    def _explicit_dtype(self, input_dtype: npt.DTypeLike) -> npt.DTypeLike:
+        return self._output_type
+
+    def _convert_output_type(self, output, output_dtype):
+        if xp.issubdtype(output_dtype, xp.integer):
+            output = xp.rint(output)
+        return output.astype(output_dtype)
+
+    def _ensure_data_format(self, array):
+        array = xp.asarray(array)
+        if xp.issubdtype(self.dtype, xp.integer):
+            array = array.astype(xp.float32)
+        return array
+
     @staticmethod
     def _set_limits_percentile(constraints, input_, reset=False):
         """Set the min and max of the params object based on input data using
@@ -951,6 +1119,8 @@ class AnalogCore:
             max: float
             percentile: float.
         """
+        input_ = xp.asarray(input_)
+
         if (constraints.min is None or constraints.max is None) or reset:
             if constraints.percentile >= 1.0:
                 X_max = xp.max(xp.abs(input_))
@@ -1000,11 +1170,11 @@ class AnalogCore:
 
     def __matmul__(self, other: npt.ArrayLike) -> npt.NDArray:
         other = xp.asarray(other)
-        return self.dot(other)
+        return self.matmul(other)
 
     def __rmatmul__(self, other: npt.ArrayLike) -> npt.NDArray:
         other = xp.asarray(other)
-        return self.rdot(other)
+        return self.rmatmul(other)
 
     def __repr__(self) -> str:
         prefix = "AnalogCore("
@@ -1159,7 +1329,7 @@ class MaskedCore(AnalogCore):
 
     def set_matrix(self, matrix: npt.ArrayLike, verbose: bool = False, error_mask=None):
         # TODO: Do we need to do anything with error_mask here?
-        expanded_mat = self.parent.get_matrix()
+        expanded_mat = xp.asarray(self.parent.get_matrix())
         expanded_mat[self.rslice, self.cslice] = xp.asarray(matrix)
         self.parent.set_matrix(
             expanded_mat,

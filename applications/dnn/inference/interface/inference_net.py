@@ -69,8 +69,6 @@ def set_params(**kwargs):
 
     x_par = kwargs.get("x_par",1)
     y_par = kwargs.get("y_par",1)
-    weight_reorder = kwargs.get("weight_reorder",True)
-    conv_matmul = kwargs.get("conv_matmul",True)
     useGPU = kwargs.get("useGPU",False)
     gpu_id = kwargs.get("gpu_id",0)
     profile_ADC_inputs = kwargs.get("profile_ADC_inputs",False)
@@ -91,53 +89,24 @@ def set_params(**kwargs):
     if useGPU:
         params.simulation.gpu_id = gpu_id
 
-    ### Weight reoder: Whether to reorder the duplicated weights into Toeplitz form when x_par, y_par > 1 so that the
-    # expanded matrix takes up less memory
-    if convParams is None:
-        weight_reorder = False
+    # Disable fast matmul for conv?
+    # These cases cannot be realistically modeled with matmul
+    noCM_cond1 = (Rp_col > 0)
+    noCM_cond2 = (Rp_row > 0 and not gate_input)
+    noCM_cond3 = (noise_model == "generic" and alpha_noise > 0)
+    noCM_cond4 = (noise_model != "none" and noise_model != "generic")
+    if any([noCM_cond1, noCM_cond2, noCM_cond3, noCM_cond4]):
+        params.simulation.disable_fast_matmul = True
     else:
-        # This option is disabled if any of the following conditions are True
-        # 1-3) No reuse to exploit
-        noWR_cond1 =    (x_par == 1 and y_par == 1)
-        noWR_cond2 =    (convParams['Kx'] == 1 and convParams['Ky'] == 1)
-        noWR_cond3 =    ((x_par > 1 and convParams['stride'] >= convParams['Kx']) and \
-                        (y_par > 1 and convParams['stride'] >= convParams['Ky']))
-        # 4-11) Cases that don't make sense to implement (as of now)
-        noWR_cond4 =    (NrowsMax < convParams['Kx']*convParams['Ky']*convParams['Nic'])
-        noWR_cond5 =    (convParams['bias'] and not digital_bias)
-        noWR_cond6 =    (analog_batchnorm and not digital_bias)
-        noWR_cond7 =    (wtmodel == "OFFSET")
-        noWR_cond8 =    (Rp_col > 0)
-        noWR_cond9 =    (Rp_row > 0 and not gate_input)
-        noWR_cond10 =   (noise_model == "generic" and alpha_noise > 0)
-        noWR_cond11 =   (noise_model != "none" and noise_model != "generic")
+        params.simulation.disable_fast_matmul = False
+        x_par, y_par = 1, 1
 
-        if any([noWR_cond1, noWR_cond2, noWR_cond3, noWR_cond4, noWR_cond5, noWR_cond6, 
-            noWR_cond7, noWR_cond8, noWR_cond9, noWR_cond10, noWR_cond11]):
-            weight_reorder = False
-
-    # Enable conv matmul?
-    if convParams is None:
-        conv_matmul = False
-    else:
-        # These cases cannot be realistically modeled with matmul
-        noCM_cond1 = (Rp_col > 0)
-        noCM_cond2 = (Rp_row > 0 and not gate_input)
-        noCM_cond3 = (noise_model == "generic" and alpha_noise > 0)
-        noCM_cond4 = (noise_model != "none" and noise_model != "generic")
-        if any([noCM_cond1, noCM_cond2, noCM_cond3, noCM_cond4]):
-            conv_matmul = False
-
-    if conv_matmul:
-        weight_reorder = False
-        x_par = 1
-        y_par = 1
-
-    # Multiple convolutional MVMs in parallel? (only used if conv_matmul = False)
+    # Multiple convolutional MVMs in parallel? (only used if disable_fast_matmul = True)
     params.simulation.convolution.x_par = int(x_par) # Number of sliding window steps to do in parallel (x)
     params.simulation.convolution.y_par = int(y_par) # Number of sliding window steps to do in parallel (y)
-    params.simulation.convolution.weight_reorder = weight_reorder
-    params.simulation.convolution.conv_matmul = conv_matmul
+
+    if export_conductances:
+        params.simulation.disable_fast_balanced = True
 
     if export_conductances:
         params.simulation.disable_fast_balanced = True
@@ -171,11 +140,6 @@ def set_params(**kwargs):
 
     if convParams is not None:
         params.simulation.convolution.is_conv_core = (convParams['type'] == 'conv')
-        params.simulation.convolution.stride = convParams['stride']
-        params.simulation.convolution.Kx = convParams['Kx']
-        params.simulation.convolution.Ky = convParams['Ky']
-        params.simulation.convolution.Noc = convParams['Noc']
-        params.simulation.convolution.Nic = convParams['Nic']
 
     ############### Device errors
 
@@ -202,6 +166,11 @@ def set_params(**kwargs):
     elif error_model != "generic" and error_model != "none":
         params.xbar.device.programming_error.enable = True
         params.xbar.device.programming_error.model = error_model
+
+    # For SONOS, set the read voltage appropriately so that currents don't exceed the
+    # range of validity of the model (mainly relevant for drift)
+    if error_model == "SONOS" or drift_model == "SONOS" or noise_model == "SONOS":
+        params.xbar.device.Vread = 0.06
 
     # Drift
     if drift_model != "none":
@@ -490,13 +459,6 @@ def inference(ntest,dataset,paramsList,sizes,keras_model,layerParams,**kwargs):
             layerParams[m]['bias_row'] = False
         else:
             layerParams[m]['bias_row'] = layerParams[m]['bias']
-
-        if layerParams[m]['type'] == "conv":
-            if Ncores == 1:
-                params_m.simulation.convolution.bias_row = layerParams[m]['bias_row']
-            else:
-                for k in range(Ncores):
-                    params_m[k].simulation.convolution.bias_row = layerParams[m]['bias_row']
 
         # Set # images to profile
         if Ncores == 1 and params_m.simulation.analytics.profile_adc_inputs:

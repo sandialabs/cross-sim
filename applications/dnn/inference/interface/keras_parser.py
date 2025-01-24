@@ -56,10 +56,10 @@ def get_keras_metadata(model,debug_graph=False,task="imagenet"):
         # Not always specified in a Keras CNN model; in that case use the dataset image size as a guess
         if class_name == 'InputLayer':
             inputlayer_name = config_k['name']
-            Nix0 = config_k['batch_input_shape'][1]
-            if len(config_k['batch_input_shape']) == 4: # 3D input
-                Niy0 = config_k['batch_input_shape'][2]
-                Nic0 = config_k['batch_input_shape'][3]
+            Nix0 = config_k['batch_shape'][1]
+            if len(config_k['batch_shape']) == 4: # 3D input
+                Niy0 = config_k['batch_shape'][2]
+                Nic0 = config_k['batch_shape'][3]
                 if Nix0 is None or Niy0 is None:
                     print('Input dimensions not defined. Using '+task+' image size')
                     if task in ("cifar10","cifar100"):
@@ -76,7 +76,7 @@ def get_keras_metadata(model,debug_graph=False,task="imagenet"):
         # Zero padding layer is detected, but its parameters are loaded upon parsing subsequent Conv layer
         elif class_name == 'ZeroPadding2D':
             if len(layerParams) > 0:
-                input1 = config[k]['inbound_nodes'][0][0][0]
+                input1 = config[k]['inbound_nodes'][0]['args'][0]['config']['keras_history'][0]
                 k_src = searchForLayer(input1,layerParams)
                 layerParams[k_src]['appended'] = config_k['name']
 
@@ -126,9 +126,9 @@ def get_keras_metadata(model,debug_graph=False,task="imagenet"):
 
                 # Input shape can be specified for the first conv layer, computed later for the other layers
                 if k == 0 and len(layerParams) == 0: # No InputLayer
-                    layerParams_k['Nix'] = config_k['batch_input_shape'][1]
-                    layerParams_k['Niy'] = config_k['batch_input_shape'][2]
-                    layerParams_k['Nic'] = config_k['batch_input_shape'][3]
+                    layerParams_k['Nix'] = config_k['batch_shape'][1]
+                    layerParams_k['Niy'] = config_k['batch_shape'][2]
+                    layerParams_k['Nic'] = config_k['batch_shape'][3]
                 elif len(layerParams) == 0: # Get dimensions from InputLayer
                     layerParams_k['Nix'] = Nix0
                     layerParams_k['Niy'] = Niy0
@@ -137,7 +137,7 @@ def get_keras_metadata(model,debug_graph=False,task="imagenet"):
                 # Find source layer, if no inbound nodes set, assume sequential
                 if len(layerParams) > 0:
                     if 'inbound_nodes' in config[k]:
-                        input1 = config[k]['inbound_nodes'][0][0][0]
+                        input1 = config[k]['inbound_nodes'][0]['args'][0]['config']['keras_history'][0]
                         k_src = searchForLayer(input1,layerParams)
                     else:                        
                         k_src = len(layerParams)-1
@@ -206,7 +206,7 @@ def get_keras_metadata(model,debug_graph=False,task="imagenet"):
 
                 # Find source layer
                 if 'inbound_nodes' in config[k]:
-                    input1 = config[k]['inbound_nodes'][0][0][0]
+                    input1 = config[k]['inbound_nodes'][0]['args'][0]['config']['keras_history'][0]
                     k_src = searchForLayer(input1,layerParams)
                 else:
                     k_src = len(layerParams)-1
@@ -226,7 +226,7 @@ def get_keras_metadata(model,debug_graph=False,task="imagenet"):
                 # If layer is preceded by flatten, find the source layer of flatten
                 if len(layerParams) > 0:
                     if 'inbound_nodes' in config[k]:
-                        input1 = config[k]['inbound_nodes'][0][0][0]
+                        input1 = config[k]['inbound_nodes'][0]['args'][0]['config']['keras_history'][0]
                         k_src = searchForLayer(input1,layerParams)
                     else:
                         k_src = len(layerParams)-1
@@ -259,7 +259,7 @@ def get_keras_metadata(model,debug_graph=False,task="imagenet"):
             elif class_name == 'Flatten':
                 # Find source layers
                 if 'inbound_nodes' in config[k]:
-                    input1 = config[k]['inbound_nodes'][0][0][0]
+                    input1 = config[k]['inbound_nodes'][0]['args'][0]['config']['keras_history'][0]
                     if input1 == inputlayer_name:
                         layerParams_k['source'] = np.array([-1]) # not used
                         layerParams_k['type'] = 'flatten_input'
@@ -279,10 +279,10 @@ def get_keras_metadata(model,debug_graph=False,task="imagenet"):
 
                 # Find source layers
                 if 'inbound_nodes' in config[k]:
-                    Nsources = len(config[k]['inbound_nodes'][0])
+                    Nsources = len(config[k]['inbound_nodes'][0]['args'][0])
                     k_srcs = np.zeros(Nsources,dtype=int)
                     for q in range(Nsources):
-                        input_q = config[k]['inbound_nodes'][0][q][0]
+                        input_q = config[k]['inbound_nodes'][0]['args'][0][q]['config']['keras_history'][0]
                         k_srcs[q] = searchForLayer(input_q,layerParams)
                 else:
                     raise ValueError("inbound_nodes property must exist for Add/Concatenate layer")
@@ -291,8 +291,8 @@ def get_keras_metadata(model,debug_graph=False,task="imagenet"):
                 if class_name == 'Add':
                     layerParams_k['type'] = 'add'
                     if Nsources == 2:
-                        input1 = config[k]['inbound_nodes'][0][0][0]
-                        input2 = config[k]['inbound_nodes'][0][1][0]
+                        input1 = config[k]['inbound_nodes'][0]['args'][0][0]['config']['keras_history'][0]
+                        input2 = config[k]['inbound_nodes'][0]['args'][0][1]['config']['keras_history'][0]
                         if layerParams[k_srcs[0]]['type'] == 'add':
                             layerParams_k['splitBeforeBN'] = ('add' in input1)
                         elif layerParams[k_srcs[1]]['type'] == 'add':
@@ -319,7 +319,7 @@ def get_keras_metadata(model,debug_graph=False,task="imagenet"):
                 
                 # Name of the input layer
                 if 'inbound_nodes' in config[k]:
-                    input1 = config[k]['inbound_nodes'][0][0][0]
+                    input1 = config[k]['inbound_nodes'][0]['args'][0]['config']['keras_history'][0]
                     k_src = searchForLayer(input1,layerParams)
                 else:
                     k_src = len(layerParams)-1
@@ -356,7 +356,7 @@ def get_keras_metadata(model,debug_graph=False,task="imagenet"):
 
             # Find source layer
             if 'inbound_nodes' in config[k]:
-                input1 = config[k]['inbound_nodes'][0][0][0]
+                input1 = config[k]['inbound_nodes'][0]['args'][0]['config']['keras_history'][0]
                 k_src = searchForLayer(input1,layerParams)
             else:
                 k_src = len(layerParams)-1

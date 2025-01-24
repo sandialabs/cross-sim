@@ -39,6 +39,7 @@ class OffsetCore(WrapperCore):
         self.dac_params = self.params.xbar.dac
         self.device_params = params.xbar.device
         self.input_params = self.params.core.mapping.inputs
+        self.analytics_params = self.params.simulation.analytics
         self.Icol_max = self.params.xbar.array.Icol_max
         self.clip_Icol = self.params.xbar.array.Icol_max > 0
 
@@ -81,7 +82,11 @@ class OffsetCore(WrapperCore):
         if not self.digital_offset:
             # Zero-point column
             # This currently is only compatible with MVM, since it adds a column and not a row
-            matrix_norm = np.insert(matrix_norm, 0, 0, axis=0)
+            # For some reason, cupy does not have an insert method
+            if self.params.simulation.useGPU:
+                matrix_norm = xp.asarray(np.insert(matrix_norm.get(), 0, 0, axis=0))
+            else:
+                matrix_norm = np.insert(matrix_norm, 0, 0, axis=0)
 
         matrix_norm = self.Wrange_xbar * (matrix_norm + 0.5) + self.Gmin_norm
         self.W_shape = matrix_norm.shape
@@ -95,18 +100,9 @@ class OffsetCore(WrapperCore):
 
         # Profiling of ADC inputs
         if (
-            self.params.simulation.analytics.profile_adc_inputs
-            and self.params.xbar.dac.mvm.input_bitslicing
+            self.analytics_params.profile_adc_inputs
+            and self.dac_params.mvm.input_bitslicing
         ):
-            # This is to ensure accurate binning of column currents to specific MVMs
-            if (
-                self.params.simulation.convolution.x_par > 1
-                or self.params.simulation.convolution.y_par > 1
-            ):
-                raise ValueError(
-                    "If profiling bit slicing currents, must use x_par, y_par = 1",
-                )
-
             if self.dac_params.mvm.input_bitslicing:
                 magbits = self.params.xbar.dac.mvm.bits
                 if self.params.xbar.dac.mvm.signed:
@@ -114,19 +110,11 @@ class OffsetCore(WrapperCore):
             else:
                 magbits = 1
             Nout_mvm = matrix.shape[0]
-            Nmvms = self.params.simulation.analytics.ntest
-            if self.params.simulation.convolution.is_conv_core:
-                Nmvms *= self.params.simulation.convolution.Nwindows
-            if (
-                self.params.simulation.convolution.conv_matmul
-                and self.params.simulation.convolution.is_conv_core
-            ):
-                self.outputs_per_op = (
-                    self.params.simulation.convolution.Nwindows * Nout_mvm
-                )
-            else:
-                self.outputs_per_op = Nout_mvm
+            Nmvms = self.analytics_params.ntest
+            # For convolutions, the size of the second dimension will be further scaled on the first
+            # mvm call, when the number of sliding windows per input is known
             self.adc_inputs = xp.zeros((magbits, Nmvms * Nout_mvm), dtype=xp.float32)
+            self.last_adc_input = 0
 
     def _wrapper_set_vmm_inputs(self, vector: npt.NDArray):
         vec_dac = self.dac.vmm.convert(vector)
@@ -163,6 +151,21 @@ class OffsetCore(WrapperCore):
         adc = getattr(self.adc, op)
         dac = getattr(self.dac, op)
 
+        # Update the dimensions of adc_inputs as soon as # windows is known
+        if (
+            self.analytics_params.profile_adc_inputs
+            and self.last_adc_input == 0
+            and self.params.simulation.convolution.is_conv_core
+        ):
+            self.adc_inputs = xp.zeros(
+                (
+                    self.adc_inputs.shape[0],
+                    self.adc_inputs.shape[1]
+                    * self.params.simulation.convolution.Nwindows,
+                ),
+                dtype=xp.float32,
+            )
+
         ################################
         ##  ANALOG INPUT ENCODING
         ################################
@@ -172,9 +175,10 @@ class OffsetCore(WrapperCore):
                 output = output.clip(-self.Icol_max, self.Icol_max)
 
             # ADC input profiling
-            if self.params.simulation.analytics.profile_adc_inputs:
-                i1 = self.i_op * self.outputs_per_op
-                i2 = i1 + self.outputs_per_op
+            if self.analytics_params.profile_adc_inputs:
+                num_inputs = output.size
+                i1 = self.last_adc_input
+                i2 = self.last_adc_input + num_inputs
                 self.adc_inputs[0, i1:i2] = xp.array(output.flatten(), dtype=xp.float32)
 
         ################################
@@ -197,12 +201,12 @@ class OffsetCore(WrapperCore):
                 if self.clip_Icol:
                     output_k = output_k.clip(-self.Icol_max, self.Icol_max)
 
-                if self.params.simulation.analytics.profile_adc_inputs:
-                    i1 = self.i_op * self.outputs_per_op
-                    i2 = i1 + self.outputs_per_op
+                if self.analytics_params.profile_adc_inputs:
+                    num_inputs = output_k.size
+                    i1 = self.last_adc_input
+                    i2 = self.last_adc_input + num_inputs
                     self.adc_inputs[k, i1:i2] = xp.array(
-                        output_k.flatten(),
-                        dtype=xp.float32,
+                        output_k.flatten(), dtype=xp.float32,
                     )
 
                 # ADC
@@ -223,6 +227,9 @@ class OffsetCore(WrapperCore):
             output *= pow(2, magbits) / (pow(2, magbits) - 1)
 
         self.i_op += 1
+
+        if self.analytics_params.profile_adc_inputs:
+            self.last_adc_input += num_inputs
 
         ##### Quantize and subtract offset
 
@@ -251,10 +258,15 @@ class OffsetCore(WrapperCore):
                     output -= half * xp.sum(vector)
                 else:
                     if op == "mvm":
-                        output -= half * xp.sum(vector, axis=0)
+                        if len(vector.shape) == 3:
+                            output -= half * xp.sum(vector, axis=1)[:, None, :]
+                        else:
+                            output -= half * xp.sum(vector, axis=0)
                     else:
-                        output -= half * xp.sum(vector, axis=1)[:, None]
-
+                        if len(vector.shape) == 3:
+                            output -= half * xp.sum(vector, axis=2)[:, :, None]
+                        else:
+                            output -= half * xp.sum(vector, axis=1)[:, None]
         else:
             if (
                 self.params.simulation.convolution.x_par > 1
@@ -271,9 +283,15 @@ class OffsetCore(WrapperCore):
                     output = output[1:] - output[0]
                 else:
                     if op == "mvm":
-                        output = output[1:, :] - output[0, :]
+                        if len(output.shape) == 3:
+                            output = output[:, 1:, :] - output[:, 0, :][:, None, :]
+                        elif len(output.shape) < 3:
+                            output = output[1:, :] - output[0, :]
                     else:
-                        output = output[:, 1:] - output[:, 0]
+                        if len(output.shape) == 3:
+                            output = output[:, :, 1:] - output[:, :, 0][:, :, None]
+                        elif len(output.shape) < 3:
+                            output = output[:, 1:] - output[:, 0]
 
         return output
 
@@ -288,6 +306,10 @@ class OffsetCore(WrapperCore):
             output = output_shifted - offset
         else:
             output = (output - self.Gmin_norm) / self.Wrange_xbar - 0.5
+
+        # Unexpand the matrix
+        if self.params.simulation.disable_fast_matmul:
+            output = output[: self.W_shape[0], : self.W_shape[1]]
         output *= 2 * self.max
         return output
 

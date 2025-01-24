@@ -201,7 +201,7 @@ class SarADC(IADC):
             self.comparator_offsets = xp.tile(self.comparator_offsets, x_par * y_par)
 
         # Pre-computation of indexing matrix
-        if self.simulation_params.convolution.conv_matmul:
+        if self.simulation_params.fast_matmul:
             range_vec = xp.arange(matrix.shape[0])
             self.range_mat = xp.repeat(
                 range_vec[:, None],
