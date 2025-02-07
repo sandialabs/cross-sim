@@ -1,12 +1,14 @@
 # CrossSim
 
+### Version 3.0
+
 CrossSim is a GPU-accelerated, Python-based crossbar simulator designed to model analog in-memory computing for any application that relies on matrix operations: neural networks, signal processing, solving linear systems, and many more. It is an accuracy simulator and co-design tool that was developed to address how analog hardware effects in resistive crossbars impact the quality of the algorithm solution.
 
 CrossSim has a Numpy-like API that allows different algorithms to be built on resitive memory array building blocks. CrossSim cores can be used as drop-in replacements for Numpy in application code to emulate deployment on analog hardware. It also has a special interface to model analog accelerators for neural network inference.
 
 CrossSim can model device and circuit non-idealities such as arbitrary programming errors, conductance drift, cycle-to-cycle read noise, and precision loss in analog-to-digital conversion (ADC). It also uses a fast, internal circuit simulator to model the effect of parasitic metal resistances on accuracy. For neural network inference, it can simulate accelerators with significant parameterizability at the system architecture level and can be used to explore how design choices such as weight bit slicing, negative number representation scheme, ADC ranges, and array size affect the sensitivity to these analog errors. CrossSim can be accelerated on CUDA GPUs, and inference simulations have been run on large-scale, industry-standard deep neural networks such as ResNet50 on ImageNet. CrossSim's simulation speed on ResNet50 is within ~3X of TensorFlow-Keras using baseline (simplest) analog hardware simulation settings.
 
- __To simulate neural network training, please use [CrossSim Version 2.0](https://github.com/sandialabs/cross-sim/releases/tag/v2.0). Support for neural network training will be brought back in a future software update.__
+For neural network training accelerators, CrossSim can generate lookup tables of device behavior from experimental data. These lookup tables can realistically simulate the accuracy impact of arbitrarily complex conductance update characteristics, including write nonlinearity, write asymmetry, write stochasticity, and device-to-device variability. __To simulate neural network training, please use CrossSim Version 2.0. Support for neural network training will be brought back in a future software update.__
 
 CrossSim does not explicitly model the energy, area, or speed of analog accelerators. 
 
@@ -31,21 +33,13 @@ Inference simulation of Larq quantized models requires:
 
 CrossSim has been tested with the version numbers above, but other versions may work as well.
 
-## Installation
-
-CrossSim can be installed using pip using the following command from the base repository directory.
-```
-pip install .
-```
-If you plan to modify the internal internal CrossSim models, we suggest using the `--editable` option with pip. 
-
 ## Tutorial
 
 After installing CrossSim and its dependencies, get started by checking out the CrossSim [interactive tutorial](https://github.com/sandialabs/cross-sim/tree/main/tutorial) which shows off many of the new features in Version 3.0. The tutorial walks through how to use CrossSim's Numpy-like cores to drop it easily into application code. It also contains examples of how to model different physical effects, how to use different data mapping schemes, and how to define fully customizable physical device models.
 
 ## Neural network inference
 
-CrossSim uses git submodules to distribute [neural network datasets and device lookup tables for training](https://github.com/sandialabs/cross-sim-data), and [neural network models](https://github.com/sandialabs/cross-sim-models). If you plan to use CrossSim's neural network inference scripts in the applications directory, after cloning this repository, the following commands will fetch the submodules.
+CrossSim uses git submodules to distribute [neural network datasets and device lookup tables for training](https://github.com/sandialabs/cross-sim-data), and [neural network models](https://github.com/sandialabs/cross-sim-models). After cloning this repository, the following commands will fetch the submodules.
 ```
 git submodule init
 git submodule update --progress

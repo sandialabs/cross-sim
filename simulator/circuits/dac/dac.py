@@ -1,61 +1,106 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017-2023 Sandia Corporation.
+# Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
+# the U.S. Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
 
-from .idac import IDAC
-from .quantizer_dac import QuantizerDAC, SignMagnitudeDAC
+"""Digital to analog conversions for MVM and VMM operations.
+
+This module implements an object responsible for performing DAC operations
+on vectors used in either MVM or VMM operations.
+"""
+
+import logging
+
+import numpy as np
+import numpy.typing as npt
+
+import simulator.circuits.dac.models as models  # noqa: F401
+
+from simulator.backend.compute import ComputeBackend
+from simulator.circuits.dac.idac import IDAC
+from simulator.parameters.dac import PairedDACParameters
+from simulator.parameters.core import CoreParameters
+
+log = logging.getLogger(__name__)
+xp: np = ComputeBackend()
 
 
-class DAC(IDAC):
-    def __init__(self, dac_params, core_params):
-        self.mvm = self._create_DAC(dac_params.mvm, core_params.mapping.inputs.mvm)
-        self.vmm = self._create_DAC(dac_params.vmm, core_params.mapping.inputs.vmm)
+class DAC:
+    """Digital to analog converter object.
 
-    # Putting this in here in case set limits actually gets used
-    def set_limits(self, matrix) -> None:
+    Creates an object that performs DAC operations for both MVM and VMM
+    operations.
+    """
+
+    def __init__(self, dac_params: PairedDACParameters, core_params: CoreParameters):
+        """Initializes an ADC using the provided parameters.
+
+        Args:
+            dac_params: Parameters to describe DAC behavior.
+            core_params: Parameters for the core the DAC is acting on.
+        """
+        log.info("Creating DAC for MVM of type %s", dac_params.mvm.model)
+        self.mvm = IDAC(dac_params.mvm)
+        log.info("Creating DAC for VMM of type %s", dac_params.vmm.model)
+        self.vmm = IDAC(dac_params.vmm)
+
+    def set_limits(self, matrix: npt.ArrayLike):
+        """Sets the limits for a DAC.
+
+        Args:
+            matrix: Matrix to set limits based off of.
+        """
+        matrix = xp.asarray(matrix)
         self.mvm.set_limits(matrix)
         self.vmm.set_limits(matrix.T)
 
-    def convert(self, vector):
-        raise NotImplementedError(
-            "Attemping to call DAC.convert directly, call mvm.convert or vmm.convert for the DAC model.",
-        )
+    def convert(self, vector: npt.ArrayLike) -> npt.NDArray:
+        """Converts a digital vector to an analog value.
 
-    def convert_sliced(self, vector, slice_size):
-        raise NotImplementedError(
-            "Attemping to call DAC.convert_sliced directly, call mvm.convert_sliced or vmm.convert_sliced for the DAC model.",
-        )
-
-    @staticmethod
-    def _create_DAC(dac_params, core_params) -> IDAC:
-        """Creates a DAC according to the specification by the DAC parameters
         Args:
-                dac_params (dict[str, Any]): Parameters to describe device behavior
-        Raises:
-                ValueError: Raised when an unknown DAC is specified
+            vector: Vector to be converted.
+
         Returns:
-                DAC: A device using the parameters listed.
+            npt.NDArray: Analog version of vector.
         """
-        dac_types = {subcls.__name__: subcls for subcls in IDAC.get_all_subclasses()}
-        dac_types.pop("DAC")
-        if dac_params.model not in dac_types:
-            raise ValueError(
-                "Invalid DAC model selected."
-                + f"Either create a new DAC model or choose one of the following {list(dac_types.keys())}",
-            )
-        dac = dac_types[dac_params.model](dac_params, core_params)
-        return dac
+        # QUESTION:
+        # Is this an antipattern?
+        # Having this warning in this function just makes it more likely to call
+        # it via autocomplete.
+        #
+        # Might be better to not have these functions and have this class be
+        # named PairedDAC, or similar.
+        # @Curtis, 2024-01-25
+        raise NotImplementedError(
+            "Attemping to call DAC.convert directly, "
+            "call mvm.convert or vmm.convert for the DAC model.",
+        )
 
+    def convert_sliced(self, vector: npt.ArrayLike, slice_size: int = 1) -> npt.NDArray:
+        """Converts a sliced vector.
 
-class IdealDAC(IDAC):
-    def set_limits(self, matrix):
-        pass
+        Args:
+            vector: Vector to be converted.
+            slice_size: Size of slice to be converted.
 
-    def convert(self, vector):
-        return vector
+        Raises:
+            NotImplementedError: Should be called on dac.mvm or dac.vmm
 
-    def convert_sliced(self, vector, slice_size):
-        raise NotImplementedError("IdealDAC cannot do a sliced conversion")
+        Returns:
+            npt.NDArray: Analog version of the slice.
+        """
+        # QUESTION:
+        # Is this an antipattern?
+        # Having this warning in this function just makes it more likely to call
+        # it via autocomplete.
+        #
+        # Might be better to not have these functions and have this class be
+        # named PairedDAC, or similar.
+        # @Curtis, 2024-01-25
+        raise NotImplementedError(
+            "Attemping to call DAC.convert_sliced directly, "
+            "call mvm.convert_sliced or vmm.convert_sliced for the DAC model.",
+        )

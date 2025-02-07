@@ -1,13 +1,13 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017-2023 Sandia Corporation.
+# Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
+# the U.S. Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
 import numpy as np
 from scipy.special import softmax
 from ...backend import ComputeBackend
-from ...parameters.core_parameters import CoreStyle, BitSlicedCoreStyle
 
 xp = ComputeBackend()
 
@@ -33,7 +33,8 @@ def apply_pool(
     py_R,
     avgPool_round,
 ):
-    """Perform a max pool operation on a matrix, taking the max over MPx x MPy block with a given stride
+    """Perform a max pool operation on a matrix, taking the max over MPx x MPy
+    block with a given stride
     Assume the stride is equal to the kernel size
     This function is not tied to the convolution core object.
     """
@@ -48,7 +49,8 @@ def apply_pool(
 
     Nc, Nx, Ny = matrix.shape
 
-    # If matrix size is not divisible by MaxPool stride, cut off bottom and/or right edges of matrix
+    # If matrix size is not divisible by MaxPool stride, cut off bottom and/or
+    # right edges of matrix
     # This is the TensorFlow/Keras convention
     if Nx % stride_MP != 0 or Ny % stride_MP != 0:
         x_extra = Nx % stride_MP
@@ -92,7 +94,9 @@ def apply_pool(
 
 
 def flatten_layer(matrix, useGPU):
-    """Flatten a 3D matrix (Nx,Ny,Nchannels) to a 1D vector, in a way that is identical with a Flatten layer in Keras."""
+    """Flatten a 3D matrix (Nx,Ny,Nchannels) to a 1D vector, in a way that is
+    identical with a Flatten layer in Keras.
+    """
     if len(matrix.shape) == 1:
         return matrix
     matrix = xp.transpose(matrix, (1, 2, 0))
@@ -142,6 +146,8 @@ def apply_quantization(x, W, shift_bits, output_bits, signed):
 
 
 # Output function for Whetstone models
+
+
 def decode_from_key(key, input_vec, useGPU):
     """Decodes a vector using the specified key.
 
@@ -152,20 +158,10 @@ def decode_from_key(key, input_vec, useGPU):
     # Returns
         Decoded one-hot vector.
     """
-    # return [1*(np.argmax(np.matmul(2*key-1,2*input_vec-1))==i) for i in range(0, key.shape[0])]
+    # return [
+    #   1*(np.argmax(np.matmul(2*key-1,2*input_vec-1))==i)
+    #   for i in range(0, key.shape[0])
+    # ]
     if useGPU:
         x = cp.asnumpy(input_vec)
     return softmax(np.dot(2 * x - 1, 2 * key - 1))
-
-
-# Return string pair specifying style of core and bit sliced core
-def corestyle_str(core_style, bitsliced_core_style):
-    if core_style == CoreStyle.BALANCED:
-        return ("BALANCED", "NONE")
-    elif core_style == CoreStyle.OFFSET:
-        return ("OFFSET", "NONE")
-    elif core_style == CoreStyle.BITSLICED:
-        if bitsliced_core_style == BitSlicedCoreStyle.BALANCED:
-            return ("BITSLICED", "BALANCED")
-        elif bitsliced_core_style == BitSlicedCoreStyle.OFFSET:
-            return ("BITSLICED", "OFFSET")

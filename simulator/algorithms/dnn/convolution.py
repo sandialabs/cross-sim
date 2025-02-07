@@ -1,13 +1,14 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017-2023 Sandia Corporation.
+# Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
+# the U.S. Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
 
 import numpy as np
-from ...cores.analog_core import AnalogCore
-from ...backend import ComputeBackend
+from simulator.cores.logical.analog_core import AnalogCore
+from simulator.backend.compute import ComputeBackend
 
 xp = ComputeBackend()
 
@@ -20,8 +21,8 @@ class Convolution:
 
     def __init__(self, convParams, **kwargs):
         # Set the params of the Convolution core
-        # If the Convolution core contains multiple neural cores, the master params object is a copy of the first
-        # subcore params
+        # If the Convolution core contains multiple neural cores, the master
+        # params object is a copy of the first subcore params
 
         if "params" not in kwargs:
             raise ValueError(
@@ -30,7 +31,7 @@ class Convolution:
         params = kwargs["params"]
 
         #################
-        ## Get convolution parameters
+        # Get convolution parameters
         #################
 
         self.Kx = convParams["Kx"]
@@ -43,7 +44,7 @@ class Convolution:
         self.bias_row = convParams["bias_row"]
 
         #################
-        ## Compute derived convolution parameters
+        # Compute derived convolution parameters
         #################
 
         # Calculate number of rows in array
@@ -88,7 +89,7 @@ class Convolution:
                 self.py_1 = py - self.py_0
 
         #################
-        ## Instantiate analog cores
+        # Instantiate analog cores
         #################
 
         # Keep a copy of the convolution parameters
@@ -110,7 +111,8 @@ class Convolution:
             empty_matrix=True,
         )
 
-        # Map wrapper cores of AnalogCore to this core so that this object can be treated like an AnalogCore
+        # Map wrapper cores of AnalogCore to this core so that this object can
+        # be treated like an AnalogCore
         self.Ncores = self.core.Ncores
         self.cores = self.core.cores
         self.num_cores_row = self.core.num_cores_row
@@ -119,7 +121,8 @@ class Convolution:
     def set_matrix(self, matrix, verbose=False):
         """Set the weight matrix across all constituent wrapper cores
         The crossbar arrangement is as follows:
-        - Along the rows are ALL the kernel weights for each input channel. Input channel 0 first, then input channel 1, ...
+        - Along the rows are ALL the kernel weights for each input channel.
+            Input channel 0 first, then input channel 1, ...
         - Along the columns are the weights for the different output channels.
         """
         x_par = self.params.simulation.convolution.x_par
@@ -156,14 +159,16 @@ class Convolution:
         # matrix.shape[0] for VMM, matrix.shape[1] for MVM
         if matrix.shape[1] != self.Nrows:
             raise ValueError(
-                "The number of rows in the weight matrix is inconsistent with conv core parameters",
+                "The number of rows in the weight matrix is inconsistent "
+                "with conv core parameters",
             )
 
         # Check number of columns
         # matrix.shape[1] for VMM, matrix.shape[0] for MVM
         if matrix.shape[0] != self.Noc:
             raise ValueError(
-                "The number of columns in the weight matrix is inconsistent with conv core parameters",
+                "The number of columns in the weight matrix is inconsistent "
+                "with conv core parameters",
             )
 
         self.core.set_matrix(matrix, verbose=verbose)
@@ -173,8 +178,9 @@ class Convolution:
         return self.core.get_matrix()
 
     def reshape_input(self, M_input):
-        """Reshape a vector input to a matrix input with the dimensions specified for this conv layer. The vector must be the
-        appropriate length.
+        """Reshape a vector input to a matrix input with the dimensions
+        specified for this conv layer. The vector must be the appropriate
+        length.
         """
         if M_input.shape == (self.Nic, self.Nix, self.Niy):
             return M_input
@@ -191,10 +197,10 @@ class Convolution:
 
         try:
             return M_input.reshape(self.Nic, self.Nix, self.Niy)
-        except:
+        except Exception as e:
             raise ValueError(
                 "Input does not have correct dimensions to be used in conv layer",
-            )
+            ) from e
 
     def apply_convolution(self, M_input):
         if len(M_input.shape) == 1:
@@ -208,8 +214,8 @@ class Convolution:
 
         if Nic != self.Nic or Nx != self.Nix or Ny != self.Niy:
             raise ValueError(
-                "The number of channels in the input matrix does not match the number of input "
-                + "channels in the convolutional layer.",
+                "The number of channels in the input matrix does not match the number "
+                "of input channels in the convolutional layer.",
             )
 
         if self.params.simulation.convolution.conv_matmul:
@@ -218,12 +224,16 @@ class Convolution:
             return self.apply_convolution_matvec(M_input)
 
     def apply_convolution_matvec(self, M_input):
-        """Applies a convolution operation to an input matrix M_input. Uses the sliding window method. Each MVM returns returns the outputs ...
-        for all output channels for a single window. The results are then re-constructed into an output matrix that follows the same ...
-        format as the input matrix.
+        """Applies a convolution operation to an input matrix M_input. Uses the
+        sliding window method. Each MVM returns returns the outputs ... for all
+        output channels for a single window. The results are then re-constructed
+        into an output matrix that follows the same ... format as the input
+        matrix.
 
-        M_input: a 3D matrix of size (Nx, Ny, Nic). The third dimension must match the Nic in the conv core's parameters
-        M_output: a 3D matrix of size (Nx_out, Ny_out, Noc). Nx_out and Ny_out is a function of the conv core's filter size, stride, and padding
+        M_input: a 3D matrix of size (Nx, Ny, Nic). The third dimension must
+            match the Nic in the conv core's parameters
+        M_output: a 3D matrix of size (Nx_out, Ny_out, Noc). Nx_out and Ny_out
+            is a function of the conv core's filter size, stride, and padding
         """
         Nic, Nx, Ny = M_input.shape
         Kx = self.Kx
@@ -249,7 +259,8 @@ class Convolution:
             (M_input.shape[2] - Ky) // stride + 1,
         )
 
-        # Additional zero padding to account for output not being divisible by x_par, y_par
+        # Additional zero padding to account for output not being
+        # divisible by x_par, y_par
         if Nx_out % x_par != 0 or Ny_out % y_par != 0:
             x_pad = int(np.ceil(Nx_out / x_par) * x_par - Nx_out) * stride
             y_pad = int(np.ceil(Ny_out / y_par) * y_par - Ny_out) * stride
@@ -338,12 +349,16 @@ class Convolution:
         return M_out
 
     def apply_convolution_matmul(self, M_input):
-        """Applies a convolution operation to an input matrix M_input. Uses matrix multiplication to compute all sliding windows in one shot.
-        Each MVM returns returns the outputs for all output channels for a single window.
-        The results are then re-constructed into an output matrix that follows the same format as the input matrix.
+        """Applies a convolution operation to an input matrix M_input. Uses
+        matrix multiplication to compute all sliding windows in one shot. Each
+        MVM returns returns the outputs for all output channels for a single
+        window. The results are then re-constructed into an output matrix that
+        follows the same format as the input matrix.
 
-        M_input: a 3D matrix of size (Nx, Ny, Nic). The third dimension must match the Nic in the conv core's parameters
-        M_output: a 3D matrix of size (Nx_out, Ny_out, Noc). Nx_out and Ny_out is a function of the conv core's filter size, stride, and padding
+        M_input: a 3D matrix of size (Nx, Ny, Nic). The third dimension must
+            match the Nic in the conv core's parameters
+        M_output: a 3D matrix of size (Nx_out, Ny_out, Noc). Nx_out and Ny_out
+            is a function of the conv core's filter size, stride, and padding
         """
         Nic, Nx, Ny = M_input.shape
         Kx = self.Kx

@@ -21,10 +21,10 @@ In this example,
 
 Please see ``applications/mvm_params.py`` for an example script that sets most of the parameters used by CrossSim. If a parameter is not explicitly set, its value will be the default value defined inside the relevant parameters class.
 
-All parameter objects inherit from the ``BaseParameters`` class which dictates their structure and implements an interface to import from or export parameters to JSON files.
+All parameter objects inherit from the ``Parameters`` class which dictates their structure and implements an interface to import from or export parameters to JSON files.
 
 Parameters objects can inherit from each other. For example, parameters related to a custom ADC model (e.g. ``RampADCParameters``, ``SarADCParameters``) should inherit from the ``ADCParameters`` class which contains parameters that should be common to all ADC implementations, such as the number of bits of resolution.
 
 To add a new parameter to an existing group of parameters, first find the relevant class in ``core_parameters.py``, ``xbar_parameters.py`` or ``simulation_parameters.py``. Then add the new parameter as an attribute and set its default value inside the class definition.
 
-To add a new group of parameters, define a new class (e.g. ``MyParameters``) for that group that, if applicable, inherits from an existing class of parameters. If there is no such existing class, inherit from ``BaseParameters``. Then define and document the new parameters as attributes of ``MyParameters``, and set their default values. Finally, the new group of parameters must be accessible as an attribute of an existing class that serves as a super-category of parameters: add an attribute to that class with the type set to ``MyParameters``.
+To add a new group of parameters, define a new class (e.g. ``MyParameters``) for that group that, if applicable, inherits from an existing class of parameters. If there is no such existing class, inherit from ``Parameters``. Then define and document the new parameters as attributes of ``MyParameters``, and set their default values. Finally, the new group of parameters must be accessible as an attribute of an existing class that serves as a super-category of parameters: add an attribute to that class with the type set to ``MyParameters``.

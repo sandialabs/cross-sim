@@ -14,7 +14,7 @@ An ADC model can be selected by setting ``params.xbar.adc.mvm.model`` or ``param
 
 The generic ADC models implement the standard quantization behavior described above, assuming an ideal circuit implementation. There are two types:
 - The ``QuantizerADC`` rounds the input to one of 2^_N_ levels between the min and max, where _N_ is the bit resolution. The min and max do not have to be symmetric about zero.
-- The ``SignMagnitudeADC`` assumes that the digital outputs are in sign-magnitude representation. This means that the min and max must be symmetric about zero, and the number of levels is 2^(_N_-1) because there are two redundant representations of zero.
+- The ``SignMagnitudeADC`` assumes that the digital outputs are in sign-magnitude representation. This means that the min and max must be symmetric about zero, and the number of levels is 2^_N_-1 because there are two redundant representations of zero.
 
 ### Circuit-based ADC models
 

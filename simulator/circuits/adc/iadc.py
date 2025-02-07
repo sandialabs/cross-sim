@@ -1,28 +1,106 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017-2023 Sandia Corporation.
+# Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
+# the U.S. Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
 
+"""Interface for ADC objects.
+
+This module provides the interface for Analog-to-Digital Converters (ADC)
+and a few methods utility methods.
+"""
+
 from abc import ABC, abstractmethod
 import warnings
-from simulator.parameters.xbar_parameters import ADCRangeLimits
-from simulator.parameters.core_parameters import CoreStyle, BitSlicedCoreStyle
-from simulator.backend import ComputeBackend
+import logging
+
+import numpy.typing as npt
+
+from simulator.parameters.adc import ADCRangeLimits, ADCParameters
+from simulator.parameters.dac import DACParameters
+
+from simulator.parameters.core import (
+    CoreParameters,
+)
+from simulator.parameters.simulation import SimulationParameters
+from simulator.backend.compute import ComputeBackend
+from simulator.backend.registry import register_subclasses, RegistryManager
 
 xp = ComputeBackend()  # Represents either cupy or numpy
+log = logging.getLogger(__name__)
 
 
+@register_subclasses
 class IADC(ABC):
+    """Interface for ADC objects."""
+
+    # TODO: Add device params
+    def __new__(
+        cls,
+        adc_params: ADCParameters,
+        dac_params: DACParameters,
+        core_params: CoreParameters,
+        simulation_params: SimulationParameters,
+        bitslice: int,
+    ):
+        """Creates an uninitialized ADC of type requested by the ADC parameters.
+
+        Args:
+            adc_params: Parameters to describe ADC model
+            dac_params: Unused, forwarded to __init__.
+            core_params: Unused, forwarded to __init__.
+            simulation_params: Unused, forwarded to __init__.
+            bitslice: Unused, forwarded to __init__.
+
+        Raises:
+            ValueError: Raised when an unknown ADC model is specified
+
+        Returns:
+            IADC: An unintialized object following the IADC interface.
+        """
+        registry_manager = RegistryManager()
+        adc_types = registry_manager.get(cls)
+        adc_types[cls.__name__] = cls
+        adc_types.pop("IADC", None)
+
+        try:
+            log.info("Creating new IADC object (model=%s)", adc_params.model)
+            adc_class = adc_types[adc_params.model]
+            log.info("IADC class selected = %s", adc_class)
+            adc = super().__new__(adc_class)
+            return adc
+        except KeyError as e:
+            raise ValueError(
+                f"Invalid ADC model selected. "
+                f"Model must be either the base class or a subclass of {cls.__name__}. "
+                "Either define a new ADC model or set model to one of the following: "
+                f"{list(adc_types.keys())}",
+            ) from e
+
     def __init__(
         self,
-        adc_params,
-        dac_params,
-        core_params,
-        simulation_params,
-        bitslice,
+        adc_params: ADCParameters,
+        dac_params: DACParameters,
+        core_params: CoreParameters,
+        simulation_params: SimulationParameters,
+        bitslice: int,
     ) -> None:
+        """Initializes an object with a ADC interface.
+
+        Optimal tuning of an ADC may require additional infomation about
+        the configuration of other hardware in the system. Therefore the
+        DAC and core params must also be provided.
+
+        Args:
+            adc_params: Parameters to describe device behavior
+            dac_params: DAC parameters used for "full precision guarantee"
+            core_params: Core parameters used for "full precision guarantee"
+            simulation_params: Additional parameters about the simulation
+                configuration
+            bitslice: Which bitslice the ADC belongs to.
+        """
         super().__init__()
         self.bits = adc_params.bits
         self.signed_input = dac_params.signed
@@ -30,72 +108,73 @@ class IADC(ABC):
         self.dac_params = dac_params
         self.simulation_params = simulation_params
         self.core_params = core_params
-        self.core_type = core_params.style
+        self.core_type = core_params.core_type
         self.adc_per_ibit = adc_params.adc_per_ibit
 
         self.Nbits_in = self.dac_params.bits
-        self.Nbits_w = self.core_params.weight_bits
+        # TODO: Where to place weight_bits?
+        #       Is the core params the right place?
+        #       @Curtis, 2023-11-27
+        self.Nbits_w = self.adc_params.weight_bits
         self.ymin = 1 / pow(2, self.Nbits_w)
 
         # Used in certain cases
         if self.Nbits_in > 0:
+            # TODO: Error prone - Conditionally defined attribute
+            # (@Curtis, 2023-10-10)
             if self.signed_input:
                 self.corr = pow(2, self.Nbits_in - 1) / (pow(2, self.Nbits_in - 1) - 1)
             else:
                 self.corr = pow(2, self.Nbits_in) / (pow(2, self.Nbits_in) - 1)
 
         # Set the bit slice range parameter
-        if self.core_type == CoreStyle.BITSLICED and self.bits > 0:
-            Wbits = self.core_params.weight_bits
+        if self.core_type == "BitslicedCore" and self.bits > 0:
+            Wbits = self.adc_params.weight_bits
             Nslices = self.core_params.bit_sliced.num_slices
 
-            self.bitsliced_core_type = self.core_params.bit_sliced.style
+            # NOTE: Assumes all subcores of bitsliced core are of the same type.
+            self.bitsliced_core_type = self.core_params.subcores[0].core_type
             if self.adc_params.adc_range_option == ADCRangeLimits.CALIBRATED:
                 self.calibrated_range = self.adc_params.calibrated_range[bitslice]
-                # If bit 0, check that the limits of different slices differ by powers of 2
+                # If bit 0, check that the limits of different slices differ
+                # by powers of 2
                 if bitslice == 0:
-                    ranges = xp.zeros(Nslices)
-                    for i in range(Nslices):
-                        ranges[i] = (
-                            self.adc_params.calibrated_range[i][1]
-                            - self.adc_params.calibrated_range[i][0]
-                        )
-                    range_ratios = xp.zeros(Nslices - 1)
-                    for i in range(Nslices - 1):
-                        range_ratios[i] = xp.log2(ranges[i + 1] / ranges[i])
-                    diff = xp.abs(range_ratios - xp.round(range_ratios))
-                    if any(diff > 1e-6):
-                        warnings.warn(
-                            "Warning: Bit sliced core ADC ranges do not differ by powers of 2!",
-                        )
-
+                    _verify_calibrated_bitslice_range(
+                        Nslices=Nslices,
+                        calibrated_range=self.adc_params.calibrated_range,
+                    )
             if Wbits % Nslices == 0:
                 self.Wbits_slice = int(Wbits / Nslices)
-            elif self.bitsliced_core_type == BitSlicedCoreStyle.BALANCED:
+            elif self.bitsliced_core_type == "SignedCore":
                 self.Wbits_slice = xp.ceil((Wbits - 1) / Nslices).astype(int)
             else:
                 self.Wbits_slice = xp.ceil(Wbits / Nslices).astype(int)
 
     @abstractmethod
-    def convert(self, vector):
-        """Returns a vector converted from one containing analog values
+    def convert(self, vector: npt.ArrayLike) -> npt.NDArray:
+        """Converts a vector from analog value to digital values.
+
+        Returns a vector converted from one containing analog values
         to one containing digital values.
-        Converts with respect to the limits set for the adc.
+        Converts with respect to the limits set for the dac.
         """
         raise NotImplementedError
 
     @abstractmethod
-    def set_limits(self, matrix):
-        """Given a matrix, sets the maximum possible limits for the adc
-        based on core type and adc_range_option.
+    def set_limits(self, matrix: npt.ArrayLike):
+        """Given a matrix, sets the maximum possible limits for the adc.
 
-        The default option is "calibrated" with adc_per_ibit = False
+        Based on core type and adc_range_option.
+        The default configuration uses "calibrated" with adc_per_ibit = False
+
+        Args:
+            matrix: Matrix to use to set ADC limits.
         """
-        ###########################
-        #### NON-BITSLICED CORE
-        ###########################
+        ######################
+        # NON-BITSLICED CORE #
+        ######################
 
-        if self.core_type != CoreStyle.BITSLICED:
+        if self.core_params.core_type != "BitslicedCore":
             if (
                 self.adc_params.adc_range_option is ADCRangeLimits.MAX
             ):  # Handled BALANCED and OFFSET
@@ -103,8 +182,8 @@ class IADC(ABC):
                 if self.signed_input:
                     self.min = -matrix.shape[1]
                 elif (
-                    self.core_type == CoreStyle.BALANCED
-                    and self.core_params.balanced.subtract_current_in_xbar
+                    self.core_params.core_type == "SignedCore"
+                    and self.core_params.subtract_in_xbar
                 ):
                     self.min = -matrix.shape[1]
                 else:
@@ -112,8 +191,8 @@ class IADC(ABC):
 
             elif self.adc_params.adc_range_option is ADCRangeLimits.GRANULAR:
                 if self.signed_input or (
-                    self.core_type == CoreStyle.BALANCED
-                    and self.core_params.balanced.subtract_current_in_xbar
+                    self.core_params.core_type == "SignedCore"
+                    and self.core_params.subtract_in_xbar
                 ):
                     self.min = -self.ymin * (pow(2, self.bits - 1) - 1) * self.corr
                     self.max = self.ymin * (pow(2, self.bits - 1) - 1) * self.corr
@@ -125,20 +204,24 @@ class IADC(ABC):
                 self.min = self.adc_params.calibrated_range[0]
                 self.max = self.adc_params.calibrated_range[1]
 
-        ###########################
-        #### BITSLICED CORE
-        ###########################
+        ##################
+        # BITSLICED CORE #
+        ##################
 
         else:
-            if self.bitsliced_core_type == BitSlicedCoreStyle.OFFSET:
+            # TODO:
+            # This has flexibility to change when we actually write bitsliced
+            if self.bitsliced_core_type == "OffsetCore":
                 if self.adc_params.adc_range_option == ADCRangeLimits.MAX:
                     # Bring # rows to nearest power of 2
                     ymax = pow(2, xp.round(xp.log2(matrix.shape[1])))
-                    # Correct to make level separation a multiple of the min cell current
+                    # Correct to make level separation a multiple
+                    # of the min cell current
                     ymax *= pow(2, self.Wbits_slice) / (pow(2, self.Wbits_slice) - 1)
 
                     if self.signed_input:
-                        # Further correction to ensure level separation is a multiple of the min cell current
+                        # Further correction to ensure level separation is a
+                        # multiple of the min cell current
                         # I think the line below assumes SignbitADC
                         ymax *= (pow(2, self.bits) - 2) / pow(2, self.bits)
                         # Correct for input bits
@@ -149,7 +232,8 @@ class IADC(ABC):
                         self.max = ymax
 
                     else:
-                        # Further correction to ensure level separation is a multiple of the min cell current
+                        # Further correction to ensure level separation is a
+                        # multiple of the min cell current
                         ymax *= (pow(2, self.bits) - 1) / pow(2, self.bits)
                         # Correct for input bits
                         ymax *= pow(2, self.Nbits_in) / (pow(2, self.Nbits_in) - 1)
@@ -174,7 +258,7 @@ class IADC(ABC):
                     self.min = self.calibrated_range[0]
                     self.max = self.calibrated_range[1]
 
-            elif self.bitsliced_core_type == BitSlicedCoreStyle.BALANCED:
+            elif self.bitsliced_core_type == "SignedCore":
                 if self.adc_params.adc_range_option == ADCRangeLimits.MAX:
                     self.min = -matrix.shape[1]
                     self.max = matrix.shape[1]
@@ -196,27 +280,29 @@ class IADC(ABC):
 
         self.range = self.max - self.min
 
-    @classmethod
-    def get_all_subclasses(cls: type, use_base=True) -> list[type]:
-        """Returns all subclasses of a type
-        Args:
-            cls (type): Type to get subclasses of, ignored if use_base is True
-            use_base (bool, optional): If set all subclasses of the ADC are returned as
-                opposed to of the current type. Defaults to True.
-
-        Returns:
-            list[type]: A list of all BaseDevice classes.
-        """
-        root = cls
-        if use_base:
-            root = IADC
-        subclasses = []
-        for subclass in root.__subclasses__():
-            subclasses.append(subclass)
-            subclasses.extend(subclass.get_all_subclasses(use_base=False))
-        return subclasses
-
 
 # Utility function used in several custom ADC models
-def get_digit(x, n):
+def get_digit(x: int, n: int) -> int:
+    """Returns the binary digit of a number."""
     return (x // 2**n) % 2
+
+
+def _verify_calibrated_bitslice_range(
+    Nslices: int,
+    calibrated_range: list[list[float]],
+) -> bool:
+    """Check that the limits of different slices differ by powers of 2."""
+    ranges = xp.zeros(Nslices)
+    for i in range(Nslices):
+        ranges[i] = calibrated_range[i][1] - calibrated_range[i][0]
+    range_ratios = xp.zeros(Nslices - 1)
+    for i in range(Nslices - 1):
+        range_ratios[i] = xp.log2(ranges[i + 1] / ranges[i])
+    diff = xp.abs(range_ratios - xp.round(range_ratios))
+    if any(diff > 1e-6):
+        warnings.warn(
+            "Warning: Bit sliced core ADC ranges do not differ by powers of 2!",
+            stacklevel=2,
+        )
+        return False
+    return True

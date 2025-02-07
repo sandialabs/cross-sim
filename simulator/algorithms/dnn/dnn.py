@@ -1,13 +1,13 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017-2023 Sandia Corporation.
+# Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
+# the U.S. Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
 
 import time
 import numpy as np
-import pickle
 from .activate import Activate, RECTLINEAR, STYLES
 from .convolution import Convolution
 from .dnn_util import (
@@ -17,31 +17,51 @@ from .dnn_util import (
     apply_quantization,
     init_GPU_util,
     decode_from_key,
-    corestyle_str,
 )
-from ...cores.analog_core import AnalogCore
-from ...parameters.core_parameters import CoreStyle, BitSlicedCoreStyle
-from ...backend import ComputeBackend
+from simulator.cores.logical.analog_core import AnalogCore
+
+# from ...parameters.core_parameters import CoreStyle, BitSlicedCoreStyle
+from simulator.backend.compute import ComputeBackend
+
+# TODO:
+# Convert to new style core
+CoreStyle = None
+BitSlicedCoreStyle = None
 
 xp = ComputeBackend()
 
 
 class DNN:
-    """This class creates a multi-layer neural network, reads an input data set, and
-    uses the network to perform classification with pre-trained weights.
+    """This class creates a multi-layer neural network, reads an input data set,
+    and uses the network to perform classification with pre-trained weights.
     """
 
     def __init__(self, layers, seed=None):
         """Define a neural network object
         required args:
-          layers defined for a convolutional network as a tuple of tuples  (or list of lists). each inner tuple represents: (x size, y size, channels)
-                Thus we have:( (x_in,y_in,channel_in),(x_hidden1,y_hidden1,channel_hidden1), ...,(x_out,y_out,channel_out))
-                fully connected layers should be specified as:
-                    ( (1,1,n_in),(1,1,n_hidden1), ...,(1,1,n_out)) OR ( n_in,n_hidden1, ...,n_out).
+          layers defined for a convolutional network as a tuple of tuples
+            (or list of lists). each inner tuple represents:
+                (x size, y size, channels)
+            Thus we have:
+                (
+                    (x_in,y_in,channel_in),
+                    (x_hidden1,y_hidden1,channel_hidden1),
+                    ...,
+                    (x_out,y_out,channel_out)
+                )
+            fully connected layers should be specified as:
+                (
+                    (1,1,n_in),
+                    (1,1,n_hidden1),
+                    ...,
+                    (1,1,n_out)
+                )
+                OR
+                (n_in,n_hidden1, ...,n_out).
         """
         self.layers = []
         for layer in layers:
-            if type(layer) == int:
+            if isinstance(layer, int):
                 self.layers.append((1, 1, layer))
             else:
                 self.layers.append(layer)
@@ -106,7 +126,8 @@ class DNN:
     ):
         if len(layerParams) != self.nlayer:
             raise ValueError(
-                "Number of layers defined in layerParams is inconstent with sizes vector",
+                "Number of layers defined in layerParams "
+                "is inconstent with sizes vector",
             )
         self.layerTypes = [layerParams[k]["type"] for k in range(len(layerParams))]
         self.sourceLayers = [layerParams[k]["source"] for k in range(len(layerParams))]
@@ -155,11 +176,13 @@ class DNN:
     def create_onecore(self, style, i, **kwargs):
         if style == "conv":
             # Create a convolutional layer
-            # The row and column numbers here will be ignored: an appropriately sized matrix
-            # will be initialized based on convolutional layer parameters (params)
+            # The row and column numbers here will be ignored: an appropriately
+            # sized matrix will be initialized based on convolutional layer
+            # parameters (params)
             ncore = Convolution(self.auxLayerParams[i], **kwargs)
         elif style == "dense":
-            # If core is not a conv layer, need to check that specified inputs and outputs are indeed vectors
+            # If core is not a conv layer, need to check that specified inputs
+            # and outputs are indeed vectors
             if self.layers[i][0] != 1 and self.layers[i][1] != 1:
                 raise ValueError("Invalid size of input to a fully connected layer")
             if self.layers[i + 1][0] != 1 and self.layers[i + 1][1] != 1:
@@ -189,8 +212,11 @@ class DNN:
     # -------------------------------------------------------
 
     def read_weights_keras(self, weight_dict, verbose=False):
-        """Populate Ncore weight matrices from a Keras model file
-        weight_dict: dictionary container of weights from Keras model indexed by layer name.
+        """Populate Ncore weight matrices from a Keras model file.
+
+        Args:
+            weight_dict: dictionary container of weights from Keras model
+                indexed by layer name.
         """
         for ilayer in range(self.nlayer):
             # Extract batch norm if applicable
@@ -326,7 +352,9 @@ class DNN:
         init_GPU_util(useGPU)
 
     def expand_cores(self):
-        """Duplicate the arrays inside the neural cores in order to allow parallel sliding window computation of convolutions
+        """Duplicate the arrays inside the neural cores in order to allow
+        parallel sliding window computation of convolutions.
+
         Duplication factor is set by x_par and y_par.
         """
         for ilayer in range(self.nlayer):
@@ -480,7 +508,8 @@ class DNN:
             n = self.ndata
 
         # DAC inputs are always profiled inside DNN in algorithmic units
-        # ADC inputs are profiled inside DNN only if ReLU-aware profiling is used
+        # ADC inputs are profiled inside DNN only if ReLU-aware profiling is
+        # used
         (
             self.profile_DAC_inputs,
             self.profile_ADC_inputs,
@@ -500,7 +529,8 @@ class DNN:
                 )
         if self.profile_DAC_inputs and self.profile_ADC_inputs:
             raise ValueError(
-                "Cannot profile both DAC and ADC statistics simultaneously. Please profile DAC first, then enable the DAC and profile ADC.",
+                "Cannot profile both DAC and ADC statistics simultaneously. "
+                "Please profile DAC first, then enable the DAC and profile ADC.",
             )
 
         # Generate a list of random example numbers
@@ -524,7 +554,7 @@ class DNN:
 
         # Make predictions on the inputs
         for one in range(n):
-            ### Display the cumulative accuracy and compute time to the user
+            # Display the cumulative accuracy and compute time to the user
             if one > 0 and (count_interval > 0) and one % count_interval == 0:
                 time_msg, accs = "", ""
                 if time_interval:
@@ -556,7 +586,7 @@ class DNN:
                     end="\r",
                 )
 
-            ### Make a single prediction with the neural network
+            # Make a single prediction with the neural network
             ex = one if not randomSampling else inds_rand[one]
 
             result, output = self.predict_one(
@@ -567,14 +597,14 @@ class DNN:
                 return_network_output=return_network_output,
             )
 
-            ### Accumulate accuracy
+            # Accumulate accuracy
             if type(topk) is int:
                 count += int(result)
             else:
                 for j in range(len(topk)):
                     count[j] += int(result[j])
 
-            ### Collect network outputs
+            # Collect network outputs
             if return_network_output:
                 if one == 0:
                     network_outputs = xp.zeros((n, len(output)))
@@ -632,7 +662,7 @@ class DNN:
                 ivec = output_vec.copy()
 
             #########################################
-            #### Convolution and dense layers
+            # Convolution and dense layers
             #########################################
             if self.layerTypes[m] in ("conv", "dense"):
                 if branch and m != 0:
@@ -679,7 +709,7 @@ class DNN:
                     output_vecs[m] = output_vec
 
             #########################################
-            #### Pooling layers
+            # Pooling layers
             #########################################
             elif self.layerTypes[m] == "pool":
                 MPx = self.auxLayerParams[m]["MPx"]
@@ -740,7 +770,7 @@ class DNN:
                     output_vecs[m] = output_vec
 
             #########################################
-            #### Element-wise addition layers
+            # Element-wise addition layers
             #########################################
             elif self.layerTypes[m] == "add":
                 Nsources = len(sourceLayers[m])
@@ -784,7 +814,7 @@ class DNN:
                 output_vecs[m] = self.activations[m].apply(mvec)
 
             #########################################
-            #### Concatenation layers
+            # Concatenation layers
             #########################################
             elif self.layerTypes[m] == "concat":
                 Nsources = len(sourceLayers[m])
@@ -803,7 +833,7 @@ class DNN:
                 output_vecs[m] = ovec
 
             #########################################
-            #### Quantization layer (for Nvidia INT4)
+            # Quantization layer (for Nvidia INT4)
             #########################################
             elif self.layerTypes[m] == "quantize":
                 shift_bits = self.auxLayerParams[m]["shift_bits"]
@@ -829,7 +859,7 @@ class DNN:
                     )
 
             #########################################
-            #### Element-wise scaling layer (for Nvidia INT4)
+            # Element-wise scaling layer (for Nvidia INT4)
             #########################################
             elif self.layerTypes[m] == "scale":
                 if branch:
@@ -843,7 +873,7 @@ class DNN:
                     output_vecs[m] = output_vec
 
             #########################################
-            #### Flatten layer
+            # Flatten layer
             #########################################
             elif self.layerTypes[m] == "flatten":
                 m_src = sourceLayers[m][0]
@@ -851,14 +881,14 @@ class DNN:
                 output_vecs[m] = flatten_layer(ivec, self.useGPU)
 
             #########################################
-            #### Flatten layer (for network input)
+            # Flatten layer (for network input)
             #########################################
             elif self.layerTypes[m] == "flatten_input":
                 ivec = indata[one].copy()
                 output_vecs[m] = flatten_layer(ivec, self.useGPU)
 
             #########################################
-            #### space2depth layer (TensorFlow/Pytorch)
+            # space2depth layer (TensorFlow/Pytorch)
             #########################################
             # This layer type is not currently being supported in keras_parser()
             elif self.layerTypes[m] == "space2depth":
@@ -892,7 +922,8 @@ class DNN:
 
         # Top-k accuracy:
         # If topk is an integer, returns a single value for top-k accuracy
-        # If topk is a list, tuple, or array, returns a list of accuracies for different k
+        # If topk is a list, tuple, or array, returns a list of accuracies for
+        # different k
         if len(network_output) > 1:
             if type(topk) is int:
                 if topk == 1:
@@ -948,7 +979,11 @@ class DNN:
                     Ncores_c = self.ncores[ilayer].num_cores_col
 
                     # Profiling ADC inputs with no weight bit slicing
-                    # Dimensions: (# cores row) x (# cores col) x (# input bit slices) x (# outputs)
+                    # Dimensions:
+                    #   (# cores row) x
+                    #   (# cores col) x
+                    #   (# input bit slices) x
+                    #   (# outputs)
                     if self.ncores[ilayer].params.core.style != CoreStyle.BITSLICED:
                         core0_outputs = cores[0][0].adc_inputs
                         all_core_outputs = xp.zeros(
@@ -970,8 +1005,13 @@ class DNN:
                             all_core_outputs,
                         )
 
-                    # For weight bit slicing, ADC inputs are resolved by weight bit slice in different files
-                    # For each file, dimensions: (# cores row) x (# cores col) x (# input bit slices) x (# outputs)
+                    # For weight bit slicing, ADC inputs are resolved by weight
+                    # bit slice in different files
+                    # For each file, dimensions:
+                    #   (# cores row) x
+                    #   (# cores col) x
+                    #   (# input bit slices) x
+                    #   (# outputs)
                     else:
                         for k in range(
                             self.ncores[ilayer].params.core.bit_sliced.num_slices,
@@ -1037,9 +1077,11 @@ class DNN:
                 # Range is set by the minimum and maximum
                 # Options: for bias_bit,
                 #   0       : no quantization
-                #   int > 0 : quantize to this number of bits with range set by min and max bias values
-                #   "adc"   : set the range to the ADC range and the bias_bits to the adc resolution
-                #       If a bigger range is needed than ADC, set the range to a power of 2 times the ADC range
+                #   int > 0 : quantize to this number of bits with range set by
+                #       min and max bias values
+                #   "adc"   : set the range to the ADC range and the bias_bits
+                #       to the adc resolution. If a bigger range is needed than
+                #       ADC, set the range to a power of 2 times the ADC range
                 #       and add the appropriate number of bits
                 if bias_bits != "adc":
                     if bias_bits > 0:
@@ -1069,7 +1111,8 @@ class DNN:
                     )
 
                     if adc_bits > 0:
-                        # If the layer has multiple cores, its range effectively expands when added
+                        # If the layer has multiple cores, its range effectively
+                        # expands when added
                         if self.ncores[ilayer].Ncores > 1:
                             expand_bits = np.ceil(np.log2(self.ncores[ilayer].Ncores))
                             adc_min *= pow(2, expand_bits)
@@ -1177,101 +1220,3 @@ class DNN:
             W_s = weight_dict[self.auxLayerParams[ilayer]["name"]][0]
             W_s = xp.array(W_s)
             self.scale_values[ilayer] = W_s
-
-    # -------------------------------------------------------
-    # Save all the array conductances to a file
-    # Conductances are normalized (i.e. values are G/G_max) and will include
-    # any applied quantization, programming errors, and drift
-    # -------------------------------------------------------
-    def export_conductances(self, conductances_dir):
-
-        # Structure of the created list
-        # 1) Top level: a list of length = # layers
-        # 2) For each layer, there is a dictionary:
-        #   'layer_name' : the name of the layer
-        #   'core_style' : mapping style of the core ("BALANCED", "OFFSET", "BITSLICED")
-        #   'bitsliced_core' : mapping style of each bit slice core ("NONE", "BALANCED", "OFFSET")
-        #   'num_slices' : number of bit slices
-        #   'Gmats' : contains the array conductances
-        # 3) 'Gmats' is a list of length = # row partitions x # column partitions
-        # 4) For each partition:
-        #   4a) If not using weight bit slicing, there is a dictionary
-        #       4a-1) If using balanced core, 'Gmat_pos' and 'Gmat_neg' contains the array conductances for
-        #           the positive and negative weight sub-arrays, respectively
-        #       4a-2) If using offset core, 'Gmat' contains the array conductances for the single offset core
-        #   4b) If using weight bit slicing, each partition has a list with length = # slices
-        #       For each slice, there is a dictionary
-        #       The entries of the dictionary depend on whether bit sliced core uses balanced or offset, same as above
-
-        Gmats = []
-        for ilayer in range(self.nlayer):
-            if self.layerTypes[ilayer] not in ("conv", "dense"):
-                continue
-            Gmat_i = {}
-            cores = self.ncores[ilayer].cores
-            params_i = self.ncores[ilayer].params
-            Ncores_r = self.ncores[ilayer].num_cores_row
-            Ncores_c = self.ncores[ilayer].num_cores_col
-            Gmat_i["layer_name"] = self.auxLayerParams[ilayer]["name"]
-            style_str = corestyle_str(
-                params_i.core.style, params_i.core.bit_sliced.style
-            )
-            Gmat_i["core_style"] = style_str[0]
-            Gmat_i["bitsliced_core_style"] = style_str[1]
-            Gmat_i["num_slices"] = (
-                params_i.core.bit_sliced.num_slices
-                if params_i.core.style == CoreStyle.BITSLICED
-                else 1
-            )
-            Gmat_i["Gmats"] = []
-
-            # Check for fail condition
-            fast_balanced = params_i.simulation.fast_balanced
-            cond1 = params_i.core.style == CoreStyle.BALANCED and fast_balanced
-            cond2 = (
-                params_i.core.style == CoreStyle.BITSLICED
-                and params_i.core.bit_sliced.style == BitSlicedCoreStyle.BALANCED
-                and fast_balanced
-            )
-            if cond1 or cond2:
-                raise ValueError(
-                    "To export conductances, please set "
-                    "params.simulation.disable_fast_balanced = True"
-                )
-
-            # Iterate through all arrays
-            for r in range(Ncores_r):
-                for c in range(Ncores_c):
-                    Gmat_rc = {}
-                    if params_i.core.style == CoreStyle.BALANCED:
-                        Gmat_rc["Gmat_pos"] = cores[r][c].core_pos._read_matrix()
-                        Gmat_rc["Gmat_neg"] = cores[r][c].core_neg._read_matrix()
-                    elif params_i.core.style == CoreStyle.OFFSET:
-                        Gmat_rc["Gmat"] = cores[r][c].core._read_matrix()
-                    elif params_i.core.style == CoreStyle.BITSLICED:
-                        Gmat_rc = []
-                        for islice in range(params_i.core.bit_sliced.num_slices):
-                            Gmat_slice = {}
-                            if (
-                                params_i.core.bit_sliced.style
-                                == BitSlicedCoreStyle.BALANCED
-                            ):
-                                Gmat_slice["Gmat_pos"] = (
-                                    cores[r][c].core_slices[islice][0]._read_matrix()
-                                )
-                                Gmat_slice["Gmat_neg"] = (
-                                    cores[r][c].core_slices[islice][1]._read_matrix()
-                                )
-                            elif (
-                                params_i.core.bit_sliced.style
-                                == BitSlicedCoreStyle.OFFSET
-                            ):
-                                Gmat_slice["Gmat"] = (
-                                    cores[r][c].core_slices[islice][0]._read_matrix()
-                                )
-                            Gmat_rc.append(Gmat_slice)
-                    Gmat_i["Gmats"].append(Gmat_rc)
-            Gmats.append(Gmat_i)
-
-        # Save to file
-        pickle.dump(Gmats, open(conductances_dir + "G_matrices.p", "wb"))

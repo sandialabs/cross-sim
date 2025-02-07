@@ -34,8 +34,8 @@ Finally, three models are available in the ``custom`` directory that correspond 
 
 To add a new device model, follow these steps:
 
-- Create a new file in the ``custom`` directory, and create a class that inherits from ``EmptyDevice``. See the existing files in the ``custom`` directory for examples of the appropriate imports and constructor behavior.
-- Write functions for programming error, drift error, and/or read noise. Any behavior that can be specified as a Python function can be implemented. Note that all three functions take as input a normalized conductance matrix where the maximum target-able conductance is 1. The output must also be in these normalized conductance units. For examples, see the existing files in the ``custom`` directory.
+- Create a new file in the ``models/custom`` directory, and create a class that inherits from ``EmptyDevice``. See the existing files in the ``models/custom`` directory for examples of the appropriate imports and constructor behavior.
+- Write functions for programming error, drift error, and/or read noise. Any behavior that can be specified as a Python function can be implemented. Note that all three functions take as input a normalized conductance matrix where the maximum target-able conductance is 1. The output must also be in these normalized conductance units. For examples, see the existing files in the ``modelscustom`` directory.
 - At the top of ``device.py``, import the created device class from the new file.
 
 You can now set the device model to the name of the created device class, by setting the appropriate ``model`` parameter as shown above.

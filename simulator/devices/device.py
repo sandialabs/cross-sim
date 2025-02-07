@@ -1,68 +1,116 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017-2023 Sandia Corporation.
+# Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
+# the U.S. Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
 
-from .idevice import IDevice
-from .generic_device import (
-    UniformIndependentDevice,
-    UniformProportionalDevice,
-    UniformInverseProportionalDevice,
-    NormalProportionalDevice,
-    NormalInverseProportionalDevice,
-    NormalIndependentDevice,
-)
-from .custom.PCM_Joshi import PCMJoshi
-from .custom.RRAM_Milo import RRAMMilo
-from .custom.SONOS import SONOS
-from simulator.circuits import array_simulator
-from typing import Any
+import logging
 
-from simulator.backend import ComputeBackend
+import numpy as np
 
-xp = ComputeBackend()
+import simulator.devices.models as models  # noqa: F401
+
+from simulator.parameters.device import DeviceParameters
+from simulator.devices.base_device import BaseDevice
+from simulator.backend.compute import ComputeBackend
+from simulator.devices.idevice import IDevice
+
+log = logging.getLogger(__name__)
+xp: np = ComputeBackend()
 
 
 class Device(IDevice):
-    def __init__(
-        self,
-        *args,
-        read_noise_model,
-        programming_error_model,
-        drift_error_model,
-        **kwargs,
-    ):
-        super().__init__(*args, **kwargs)
-        self._read_noise_model = read_noise_model
-        self._programming_error_model = programming_error_model
-        self._drift_error_model = drift_error_model
+    """Device object used by cores to model device errors.
+
+    A device that models read noise, programming noise and drift error noise.
+    For each error type, a differerent model can be used independent of the
+    other models.
+
+    For example, read noise and programming noise error can be configured to be
+    ideal models (e.g. they produce no error), but drift error can be configured
+    to be a non-ideal model.
+
+    Attributes:
+        cell_bits: Refer to `DeviceParameters.cell_bits`.
+        clip_conductances: Refer to `DeviceParameters.clip_conductances`.
+        time: Refer to `DeviceParameters.time`.
+    """
+
+    def __init__(self, device_params: DeviceParameters):
+        """Initializes a composite device to model errors.
+
+        Error modeling is provided for read noise, programming error, and drift.
+
+        Args:
+            device_params: Parameters for the device to create
+        """
+        super().__init__()
+        self.device_params = device_params
+        self.cell_bits = device_params.cell_bits
+        self.clip_conductance = device_params.clip_conductance
+        self.time = device_params.time
+
+        self._read_noise_model = BaseDevice(
+            device_params=device_params,
+            model_params=device_params.read_noise,
+        )
+        self._programming_error_model = BaseDevice(
+            device_params=device_params,
+            model_params=device_params.programming_error,
+        )
+        self._drift_error_model = BaseDevice(
+            device_params=device_params,
+            model_params=device_params.drift_error,
+        )
 
     def read_noise(self, input_, mask=None):
+        """Error representing device conductances during an MVM.
+
+        Read noise represents error associated with the device conductances
+        (the weights in the matrix) at the time of the MVM (e.g., the
+        temperature could effect the conductance).
+        The read noise is re-sampled on every MVM rather than at write time, as
+        a result the implementation can become a bottleneck (especially when
+        running on GPUs).
+        """
         if self.device_params.read_noise.enable:
             noisy_matrix = self._read_noise_model.read_noise(input_.copy())
-            return self.clip_and_mask(noisy_matrix, mask)
+            return self._clip_and_mask(noisy_matrix, mask)
         else:
             return input_
 
     def programming_error(self, input_, mask=None):
+        """Error representing inaccuracy of actually setting conductances.
+
+        Error that represents the inaccuracy of actually setting the
+        conductances within the AnalogCore. The error is sampled when the matrix
+        is set and so does not effect individual MVMs differently.
+        """
         if self.device_params.programming_error.enable:
             noised_input = self._programming_error_model.programming_error(
                 input_.copy(),
             )
-            return self.clip_and_mask(noised_input, mask)
+            return self._clip_and_mask(noised_input, mask)
         else:
             return input_
 
     def drift_error(self, input_, time, mask=None):
+        """Error representing the drift in the conductance of matrix over time.
+
+        The drift model is assumed to be a complete model of device errors at
+        the set time, i.e. includes the effect of programming errors.
+        If time > 0, programming errors are not applied separately from drift
+        errors.
+        """
         if self.device_params.drift_error.enable:
             noised_input = self._drift_error_model.drift_error(input_.copy(), time)
-            return self.clip_and_mask(noised_input, mask)
+            return self._clip_and_mask(noised_input, mask)
         else:
             return input_
 
-    def clip_and_mask(self, input_, mask):
+    def _clip_and_mask(self, input_, mask):
         if self.clip_conductance:
             input_ = input_.clip(self.Gmin_norm, self.Gmax_norm)
         else:
@@ -71,68 +119,3 @@ class Device(IDevice):
         if mask is not None:
             input_ *= mask
         return input_
-
-    @staticmethod
-    def create_device(device_parameters: dict[str, Any]) -> IDevice:
-        """Creates a device according to the specification by the device parameters
-        Args:
-            device_parameters (dict[str, Any]): Parameters to describe device behavior
-        Raises:
-            ValueError: Raised when an unknown read or write model is specified
-        Returns:
-            Device: A device using the parameters listed.
-        """
-        device_types = {
-            subcls.__name__: subcls for subcls in Device.get_all_subclasses()
-        }
-
-        # Remove dummy Device type and classes which don't represent valid options
-        device_types.pop("Device")
-        device_types.pop("EmptyDevice")
-        device_types.pop("GenericDevice")
-
-        read_error_model = device_parameters.read_noise.model
-        read_error_params = device_parameters.read_noise
-        programming_error_model = device_parameters.programming_error.model
-        programming_error_params = device_parameters.programming_error
-        drift_model = device_parameters.drift_error.model
-        drift_params = device_parameters.drift_error
-
-        # Error checking for more user friendly exceptions
-        message = ""
-        if read_error_model not in device_types:
-            message += f"Unknown read model: {read_error_model}.\n"
-        if programming_error_model not in device_types:
-            message += f"Unknown programming error model: {programming_error_model}.\n"
-        if drift_model not in device_types:
-            message += f"Unknown drift model: {drift_model}.\n"
-        if message:
-            message += (
-                "Either define a model by that name or select from the"
-                + f"{len(device_types)} existing options: {list(device_types)}"
-            )
-            raise ValueError(message)
-
-        # Create the custom device and return it
-        read = device_types[read_error_model](device_parameters, read_error_params)
-        programming = device_types[programming_error_model](
-            device_parameters,
-            programming_error_params,
-        )
-        drift = device_types[drift_model](device_parameters, drift_params)
-
-        device = Device(
-            device_parameters,
-            read_error_params,
-            read_noise_model=read,
-            programming_error_model=programming,
-            drift_error_model=drift,
-        )
-
-        # Try all three methods on a dummy input to make sure they are valid
-        # This ensures failure at initialization rather than runtime
-        device._read_noise_model.read_noise(xp.zeros(1))
-        device._programming_error_model.programming_error(xp.zeros(1))
-        device._drift_error_model.drift_error(xp.zeros(1), 0)
-
-        return device
