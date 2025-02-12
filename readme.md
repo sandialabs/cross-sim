@@ -1,4 +1,4 @@
-# CrossSim
+# CrossSim (V3.1)
 
 CrossSim is a GPU-accelerated, Python-based crossbar simulator designed to model analog in-memory computing for any application that relies on matrix operations: neural networks, signal processing, solving linear systems, and many more. It is an accuracy simulator and co-design tool that was developed to address how analog hardware effects in resistive crossbars impact the quality of the algorithm solution.
 
@@ -11,23 +11,21 @@ CrossSim can model device and circuit non-idealities such as arbitrary programmi
 CrossSim does not explicitly model the energy, area, or speed of analog accelerators. 
 
 ## Requirements
-CrossSim has been tested on Ubuntu 18.04, and Windows 10 using Python 3.10.8.
+CrossSim has been tested on Ubuntu 18.04 and Windows 10 using Python 3.11.6.
 
 CrossSim requires the following Python packages:
-* Numpy 1.24.3
-* SciPy 1.11.1
-* TensorFlow 2.13.0 (for DNN inference)
+* Numpy 1.26.3
+* SciPy 1.11.4
+* TensorFlow 2.17.0 (for DNN inference)
+* PyTorch 2.2.1 (for DNN inference/hardware-aware training)
 * IPython 8.8.0 (for tutorials)
-* MatPlotLib 3.7.2 (for tutorials and application examples)
-* CuPy 8.3.0 with CUDA 10.2, or Cupy 12.1.0 with CUDA 11.1 (for GPU acceleration)
+* MatPlotLib 3.8.2 (for tutorials and application examples)
+* Cupy 12.3.0 with CUDA 12.3, or CuPy 8.3.0 with CUDA 10.2 (for GPU acceleration, intermediate CuPy versions will likely work)
 
 Several of the neural network models provided with CrossSim may require additional packages.
 ImageNet models may require:
 * OpenCV 4.5.4
 * Torchvision 0.11.1
-
-Inference simulation of Larq quantized models requires:
-* Larq 0.12.1
 
 CrossSim has been tested with the version numbers above, but other versions may work as well.
 
@@ -41,28 +39,24 @@ If you plan to modify the internal internal CrossSim models, we suggest using th
 
 ## Tutorial
 
-After installing CrossSim and its dependencies, get started by checking out the CrossSim [interactive tutorial](https://github.com/sandialabs/cross-sim/tree/main/tutorial) which shows off many of the new features in Version 3.0. The tutorial walks through how to use CrossSim's Numpy-like cores to drop it easily into application code. It also contains examples of how to model different physical effects, how to use different data mapping schemes, and how to define fully customizable physical device models.
+After installing CrossSim and its dependencies, get started by checking out the CrossSim [interactive tutorial](https://github.com/sandialabs/cross-sim/tree/main/tutorial) which shows off many of the features in Version 3.0. The tutorial walks through how to use CrossSim's Numpy-like cores to drop it easily into application code. It also contains examples of how to model different physical effects, how to use different data mapping schemes, and how to define fully customizable physical device models. Some newer tutorials presented at [ISCA 2024](https://github.com/sandialabs/cross-sim/tree/main/tutorial/ISCA2024) and [NICE 2024](https://github.com/sandialabs/cross-sim/tree/main/tutorial/NICE2024) show off some of the new features of Version 3.1, including the PyTorch interface. 
 
-## Neural network inference
+## Neural network interface
 
-CrossSim uses git submodules to distribute [neural network datasets and device lookup tables for training](https://github.com/sandialabs/cross-sim-data), and [neural network models](https://github.com/sandialabs/cross-sim-models). If you plan to use CrossSim's neural network inference scripts in the applications directory, after cloning this repository, the following commands will fetch the submodules.
+As of Version 3.1, CrossSim has a new interface that integrates with both [PyTorch](https://github.com/sandialabs/cross-sim/tree/main/simulator/algorithms/dnn/torch) and [Keras](https://github.com/sandialabs/cross-sim/tree/main/simulator/algorithms/dnn/keras). Both interfaces can take a neural network model and replace the layers that are compatible with analog in-memory processing (convolutions and fully-connected layers) with new analog layer types that behave similarly to their PyTorch/Keras equivalents, but which process matrix operations using CrossSim's AnalogCores. This can be used to easily simulate deep neural network (DNN) inference on pre-trained PyTorch/Keras models. The PyTorch interface additionally supports backpropagation, enabling hardware-aware DNN training using user-specified analog hardware parameters. Examples of usage are included in application-level example scripts (for [PyTorch](https://github.com/sandialabs/cross-sim/tree/main/applications/dnn/torch) and [Keras](https://github.com/sandialabs/cross-sim/tree/main/applications/dnn/keras)), the [ISCA tutorial](https://github.com/sandialabs/cross-sim/tree/main/tutorial/ISCA2024), and the [NICE tutorial](https://github.com/sandialabs/cross-sim/tree/main/tutorial/NICE2024).
+
+## Provided datasets and pre-trained models
+
+Users can optionally download some provided example data using CrossSim's associated git submodules: [neural network datasets and device lookup tables for training](https://github.com/sandialabs/cross-sim-data), and some example pre-trained [neural network models](https://github.com/sandialabs/cross-sim-models). After cloning this repository, the following commands will fetch the submodules.
 ```
 git submodule init
 git submodule update --progress
 ```
 
-This command downloads about 1.2GB of data for the two repositories (combined), which is then de-compressed. After cloning the submodules, you can test CrossSim Inference by running the following commands:
-```
-cd applications/dnn/inference
-python run_inference.py
-```
-This will run a CrossSim Inference simulation using a simple CNN and the MNIST dataset by default. The use of the run_inference.py script is explained in more detail in Chapter 3 of the [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual_v2.0.pdf). Example scripts to perform inference are in the ``inference`` directory and described in the same chapter of the manual. If you are interested in benchmarking large neural networks, a CUDA-capable GPU is recommended.
-
-Due to file size and copyright, this distribution does not include the ImageNet dataset. Section 4.3 of the [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual_v2.0.pdf) explains how to add your own copy of the ImageNet test set to CrossSim.
-
+This command downloads about 1.2GB of data for the two repositories (combined), which is then de-compressed.
 
 ## Adding new device models
-Users can add their own custom models for their resistive devices. Any device conductance errors that can be implemented as a Python function (including look-up tables) can be called as part of a CrossSim simulation. Custom device models can be added to the following directory, which contains several examples:
+Users can add their own custom models for their resistive memory devices. Any device conductance errors that can be implemented as a Python function (including look-up tables) can be called as part of a CrossSim simulation. Custom device models can be added to the following directory, which contains several examples:
 ```
 /simulator/devices/custom
 ```
@@ -76,15 +70,6 @@ Users can also add their own custom models for ADCs, by creating a compact model
 ```
 See the ``simulator/circuits/adc`` page for details on how to do this.
 
-## Adding new neural network models, datasets, and device lookup tables
-To use your own pretrained models and datasets for use with CrossSim Inference, or your own device experimental data for use with CrossSim Training, modify the url field in the .gitmodules folder. If you have no yet initialized the submodules, use the commands above. To change the submodule url after the submodules have been initialized, use the following commands:
-```
-git submodule sync
-git submodule update --init --remote
-```
-Instructions for adding new neural network models and devices into CrossSim for use during inference can be found in Chapters 5 and 7 of [manual](https://github.com/sandialabs/cross-sim/blob/main/docs/CrossSim_Inference_manual_v2.0.pdf) respectively.
-
-If you would like to contribute your device data or models, create a pull request against this repository and the [data](https://github.com/sandialabs/cross-sim-data) or [pre-trained models](https://github.com/sandialabs/cross-sim-models) repositories.
 
 ## Citing CrossSim
 If you use CrossSim for research please cite:
