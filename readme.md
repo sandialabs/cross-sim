@@ -75,7 +75,7 @@ See the ``simulator/circuits/adc`` page for details on how to do this.
 If you use CrossSim for research please cite:
 ```text
 @article{CrossSim,
-  author={T. Patrick Xiao and Christopher H. Bennett and Ben Feinberg and Matthew J. Marinella and Sapan Agarwal},
+  author={Ben Feinberg and T. Patrick Xiao and Curtis J. Brinker and Christopher H. Bennett and Matthew J. Marinella and Sapan Agarwal},
   title={CrossSim: accuracy simulation of analog in-memory computing},
   url = {https://github.com/sandialabs/cross-sim},
 }
