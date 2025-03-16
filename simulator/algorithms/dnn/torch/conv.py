@@ -8,15 +8,13 @@
 
 """CrossSim version of N-dimensional torch.nn.Conv[N]d layers.
 
-AnalogConv[N] provides a CrossSim-based forward using Analog MVM backed by
-AnalogConvolution. Backward is implemented using an ideal torch backward (unquantized).
+AnalogConv[N] provides a CrossSim-based forward and backward using Analog MVM backed by
+AnalogConvolution.
 """
 
 from __future__ import annotations
 
 from .layer import AnalogLayer
-
-from math import prod
 
 from simulator import CrossSimParameters
 from simulator.algorithms.dnn.analog_convolution import (
@@ -25,7 +23,7 @@ from simulator.algorithms.dnn.analog_convolution import (
     AnalogConvolution2D,
     AnalogConvolution3D,
 )
-from torch import Tensor, zeros, from_dlpack
+from torch import Tensor, from_dlpack
 from torch.nn import Conv1d, Conv2d, Conv3d, Parameter
 from torch.nn.modules.conv import _ConvNd
 from torch.nn.functional import pad
@@ -135,15 +133,6 @@ class _AnalogConvNd(_ConvNd, AnalogLayer):
         # Avoids conditionals on bias and digital_bias
         self.analog_bias = bias and bias_rows > 0
 
-        self.weight_mask = (
-            slice(0, out_channels, 1),
-            slice(0, prod(self.kernel_size) * in_channels, 1),
-        )
-        self.bias_mask = (
-            slice(None, None, 1),
-            slice(self.weight_mask[1].stop, self.weight_mask[1].stop + bias_rows, 1),
-        )
-
         self.core = self.core_func(
             self.params,
             self.in_channels,
@@ -196,38 +185,10 @@ class _AnalogConvNd(_ConvNd, AnalogLayer):
             self.dilation,
             self.output_padding,
             self.groups,
+            self.training,
         )
 
         return out
-
-    def get_core_weights(self):
-        """Gets the weight and bias tensors with errors applied.
-
-        Returns:
-            Tuple of Torch Tensors, [3,4,5]D for weights, 1D or None for bias
-        """
-        matrix = self.get_matrix()
-        if self.groups == 1:
-            weight = (
-                matrix[self.weight_mask]
-                .reshape(self.weight.shape)
-                .to(self.weight.device)
-            )
-        else:
-            weight = zeros(self.weight.shape, device=self.weight.device)
-            weights_per_out = prod(self.weight.shape[1:])
-            outs_per_group = self.out_channels // self.groups
-            for i in range(self.out_channels):
-                group = i // outs_per_group
-                weight[i] = matrix[
-                    i,
-                    group * weights_per_out : (group + 1) * weights_per_out,
-                ].reshape(self.weight.shape[1:])
-        if self.analog_bias:
-            bias = matrix[self.bias_mask].sum(1).to(self.bias.device)
-        else:
-            bias = self.bias
-        return (weight, bias)
 
     def reinitialize(self) -> None:
         """Rebuilds the layer's internal core object.
@@ -607,6 +568,7 @@ class AnalogConvGrad(Function):
         dilation: tuple,
         output_padding: tuple,
         groups: int,
+        training: bool,
     ) -> Tensor:
         """CrossSim-based Conv forward.
 
@@ -633,20 +595,28 @@ class AnalogConvGrad(Function):
             dilation: ConvNd.dilation parameter
             output_padding: ConvNd.output_padding parameter
             groups: ConvNd.groups parameter
+            training: ConvNd.training parameter
 
         Returns:
             2d/3d, 3d/4d, or 4d/5d torch tensor result for 1d, 2d, and 3d inputs
             respectively. Trailing dimension matches torch.nn.ConvNd.
         """
-        ctx.save_for_backward(x, weight, bias)
-        # Stuff all the convolution parameters into ctx
-        ctx.stride = stride
-        ctx.padding = padding
-        ctx.dilation = dilation
-        ctx.output_padding = output_padding
-        ctx.groups = groups
-
         analog_bias = bias is not None and bool(bias_rows)
+
+        if training:
+            w, b = core.get_core_weights()
+            w = from_dlpack(w)
+            if not analog_bias:
+                b = bias
+            else:
+                b = from_dlpack(b)
+            ctx.save_for_backward(x, w, b)
+            # Stuff all the convolution parameters into ctx
+            ctx.stride = stride
+            ctx.padding = padding
+            ctx.dilation = dilation
+            ctx.output_padding = output_padding
+            ctx.groups = groups
 
         out = from_dlpack(core.apply(x.detach()))
 
@@ -668,10 +638,9 @@ class AnalogConvGrad(Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        """Ideal backward implementation of a ConvNd layer.
+        """Backward implementation of a ConvNd layer.
 
-        Uses ideal (unquantized and unnoised) weights (and biases with analog
-        bias) for the gradients. Based on internal torch convolution_backward.
+        Based on internal torch convolution_backward.
         """
         (x, weight, bias) = ctx.saved_tensors
 
@@ -702,4 +671,4 @@ class AnalogConvGrad(Function):
         )
 
         # No gradients with respect to core, bias_rows, or the other inputs
-        return gi, gw, gb, None, None, None, None, None, None, None
+        return gi, gw, gb, None, None, None, None, None, None, None, None

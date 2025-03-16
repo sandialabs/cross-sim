@@ -81,7 +81,7 @@ base_params_args = {
     'Rp_col' : 0, # ohms
     'interleaved_posneg' : False,
     'subtract_current_in_xbar' : True,
-    'gate_input' : False,
+    'current_from_input' : True,
     ## Input quantization
     'input_bits' : 0,
     'input_bitslicing' : False,
@@ -148,6 +148,9 @@ print("Collecting profiled data")
 profiled_inputs = get_profiled_xbar_inputs(analog_resnet)
 print("Optimizing input limits")
 calibrated_ranges = calibrate_input_limits(profiled_inputs, Nbits=8)
+
+# Manually calibrate first layer's limits based on value range of CIFAR-10 images
+calibrated_ranges[0,:] = np.array([-2.64, 2.64])
 
 np.save("./calibrated_config/input_limits_ResNet{:d}.npy".format(depth),
     calibrated_ranges)

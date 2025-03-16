@@ -59,8 +59,10 @@ class XbarParameters(BaseParameters):
             raise ValueError(
                 "ADC per input bit (adc_per_ibit) requires input bit slicing",
             )
-        if self.array.parasitics.gate_input and not self.dac.mvm.input_bitslicing:
-            raise ValueError("Gate input mode can only be used with input bit slicing")
+        if not self.array.parasitics.current_from_input and (
+            not self.dac.mvm.input_bitslicing or self.dac.mvm.slice_size > 1):
+            raise ValueError(
+                "If current_from_input=False, must use input bit slicing with slice_size = 1.")
 
 
 @dataclass(repr=False)
@@ -438,19 +440,50 @@ class ParasiticParameters(BaseParameters):
     Attributes:
         enable (bool): Whether to enable parasitic resistance model. For bit sliced,
             this indicates whether parasitics is enabled for ANY of the slices
-        Rp_row (float): Parasitic resistance of the row metallic interconnects
-        Rp_col (float): Parasitic resistince of the column metallic interconnects
-        gate_input (bool): If True, no parasitic voltage drops occur on the input side
-            regardless of Rp value. This implements the configuration where the input
-            row or column is connected to the gate of a transistor at every cell.
-            Because the transistor behaves as a switch, the input signal must be binary.
-            That means input bit slicing must be enabled
+        Rp_row (float): Parasitic resistance of the row metallic interconnects (ohms)
+        Rp_col (float): Parasitic resistince of the column metallic interconnects (ohms)
+        Rp_row_terminal (float): Series resistance at the terminal of the row
+        Rp_col_terminal (float): Series resistance at the terminal of the column
+        current_from_input (bool): If True, current is sourced from the same line that carries
+            the input signal. If False, current is sourced from a separate line and the input
+            signal is used to connect the cell to this separate line.
+        selected_rows (str): Values: "top" or "bottom". Only used if current_from_input = False.
+            If MVM/VMM # inputs < rows_max, this sets which rows are selected: "top" means
+            selected rows are far from the ADC, "bottom" means they are close to the ADC.
+            The optimal choice depends on pos/neg interleaving and whether Rp_col or Rp_row is larger.
     """
 
     enable: bool = False
     Rp_row: float = 0
     Rp_col: float = 0
-    gate_input: bool = False
+    Rp_row_terminal: float = 0
+    Rp_col_terminal: float = 0
+    current_from_input: bool = True
+    selected_rows: str = "top"
 
     def __post_init__(self):
         return super().__post_init__()
+
+    @property
+    def Rp_row_norm(self) -> float:
+        # Return the row parasitic resistance normalized by the minimum device resistance
+        params = self.root
+        return self.Rp_row / params.xbar.device.Rmin
+
+    @property
+    def Rp_col_norm(self) -> float:
+        # Return the row parasitic resistance normalized by the minimum device resistance
+        params = self.root
+        return self.Rp_col / params.xbar.device.Rmin
+
+    @property
+    def Rp_row_terminal_norm(self) -> float:
+        # Return the row parasitic resistance normalized by the minimum device resistance
+        params = self.root
+        return self.Rp_row_terminal / params.xbar.device.Rmin
+
+    @property
+    def Rp_col_terminal_norm(self) -> float:
+        # Return the row parasitic resistance normalized by the minimum device resistance
+        params = self.root
+        return self.Rp_col_terminal / params.xbar.device.Rmin

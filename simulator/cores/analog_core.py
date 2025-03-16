@@ -526,7 +526,7 @@ class AnalogCore:
 
         """
         if self.Ncores == 1:
-            matrix = self.cores[0][0]._read_matrix()
+            matrix = xp.asarray(self.cores[0][0]._read_matrix())
         else:
             matrix = xp.zeros((self.nrow, self.ncol))
             for row, row_start, row_end in self.row_partition_bounds:
@@ -559,6 +559,7 @@ class AnalogCore:
             1D Numpy-like array result of matrix-vector multiplication.
         """
         # If complex, concatenate real and imaginary part of input
+        orig_dtype = vec.dtype
         vec = self._ensure_data_format(vec)
 
         if vec.shape != (self.shape[1],) and vec.shape != (self.shape[1], 1):
@@ -601,7 +602,7 @@ class AnalogCore:
             output_imag = output[N:]
             output = output_real + 1j * output_imag
 
-        return self._convert_output_type(output, self.output_type(vec.dtype))
+        return self._convert_output_type(output, self.output_type(orig_dtype))
 
     def matmat(self, mat: npt.ArrayLike) -> npt.NDArray:
         """Perform right matrix-matrix (AX = B) multiply on programmed matrix.
@@ -617,6 +618,7 @@ class AnalogCore:
         Returns:
             >=2D Numpy-like array result of matrix-matrix multiplication.
         """
+        orig_dtype = mat.dtype
         mat = self._ensure_data_format(mat)
 
         if self.shape[1] != mat.shape[-2]:
@@ -678,7 +680,7 @@ class AnalogCore:
             output_imag = output[int(self.nrow // 2) :]
             output = output_real + 1j * output_imag
 
-        return self._convert_output_type(output, self.output_type(mat.dtype))
+        return self._convert_output_type(output, self.output_type(orig_dtype))
 
     def vecmat(self, vec: npt.ArrayLike) -> npt.NDArray:
         """Perform vector-matrix (xA = b) multiply on programmed vector (1D).
@@ -694,6 +696,7 @@ class AnalogCore:
         Returns:
             1D Numpy-like array result of vector-matrix multiplication.
         """
+        orig_dtype = vec.dtype
         vec = self._ensure_data_format(vec)
 
         if vec.shape != (self.shape[0],) and vec.shape != (1, self.shape[0]):
@@ -735,7 +738,7 @@ class AnalogCore:
             output_imag = output[:N]
             output = output_real + 1j * output_imag
 
-        return self._convert_output_type(output, self.output_type(vec.dtype))
+        return self._convert_output_type(output, self.output_type(orig_dtype))
 
     def rmatmat(self, mat: npt.ArrayLike) -> npt.NDArray:
         """Perform left matrix-matrix (XA = B) multiply on programmed matrix.
@@ -751,6 +754,7 @@ class AnalogCore:
         Returns:
             >=2D Numpy-like array result of matrix-matrix multiplication.
         """
+        orig_dtype = mat.dtype
         mat = self._ensure_data_format(mat)
 
         if self.shape[0] != mat.shape[-1]:
@@ -796,7 +800,7 @@ class AnalogCore:
             output_imag = output[:, int(self.ncol // 2) :]
             output = output_real - 1j * output_imag
 
-        return self._convert_output_type(output, self.output_type(mat.dtype))
+        return self._convert_output_type(output, self.output_type(orig_dtype))
 
     def matmul(self, x: npt.ArrayLike) -> npt.NDArray:
         """Numpy-like np.matmul function for N-D inputs.
@@ -814,7 +818,7 @@ class AnalogCore:
         Returns:
             An N-D numpy-like array result.
         """
-        x = self._ensure_data_format(x)
+        x = xp.asarray(x)
 
         # Technically ndim=2 (N,1) inputs are also "vectors" but by they require a
         # different output shape which is handled correctly if they go through the
@@ -854,7 +858,7 @@ class AnalogCore:
         Returns:
             An N-D numpy-like array result.
         """
-        x = self._ensure_data_format(x)
+        x = xp.asarray(x)
 
         # As with dot, sending all ndim == 2 to matmat fixes some shape inconsistency
         # when compared to numpy
@@ -883,7 +887,7 @@ class AnalogCore:
         Returns:
             An N-D numpy-like array result.
         """
-        x = self._ensure_data_format(x)
+        x = xp.asarray(x)
 
         # Technically ndim=2 (N,1) inputs are also "vectors" but by they require a
         # different output shape which is handled correctly if they go through the
@@ -924,7 +928,7 @@ class AnalogCore:
         Returns:
             An N-D numpy-like array result.
         """
-        x = self._ensure_data_format(x)
+        x = xp.asarray(x)
 
         # As with dot, sending all ndim == 2 to matmat fixes some shape inconsistency
         # when compared to numpy
@@ -1205,6 +1209,10 @@ class TransposedCore(AnalogCore):
         return self.parent.cslice
 
     @property
+    def dtype(self):
+        return self.parent.dtype
+
+    @property
     def fast_matmul(self):
         return self.parent.fast_matmul
 
@@ -1302,6 +1310,10 @@ class MaskedCore(AnalogCore):
         if flatten:
             self.shape = (np.max(self.shape),)
             self.ndim = 1
+
+    @property
+    def dtype(self):
+        return self.parent.dtype
 
     @property
     def fast_matmul(self) -> bool:

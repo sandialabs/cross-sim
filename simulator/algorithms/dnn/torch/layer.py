@@ -38,7 +38,7 @@ class AnalogLayer(Module, ABC):
     `AnalogLinear(torch.nn.Linear, AnalogLayer)` to ensure proper module
     resolution order. Implementing classes should exactly match the output of
     the original Torch layer when all error models are disabled for the
-    forward function and always match for the backward function. Attributes
+    forward and backward functions. Attributes
     below must be provided by implementing classes as AnalogLayer assumes
     their existence.
 
@@ -67,13 +67,6 @@ class AnalogLayer(Module, ABC):
                     (if bias only has 1 row)
                 self.analog_bias = False
                     (if layer does not support analog bias)
-        weight_mask:
-            A (slice, slice) tuple indicating which elements of the analog
-            array store the weights of the matrix.
-        bias_mask:
-            A (slice, slice) tuple indicating which elements of the analog
-            array store the bias if the bias is implemented in analog. Can be
-            empty if `self.analog_bias = False`
     """
 
     # Torch inexplicably doesn't have any native conversion from numpy dtypes to torch
@@ -125,15 +118,6 @@ class AnalogLayer(Module, ABC):
         Returns:
             Torch Tensor result of the layer operation
 
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_core_weights(self) -> tuple[torch.Tensor, torch.Tensor | None]:
-        """Gets the weight and bias tensors with errors applied.
-
-        Returns:
-            Tuple of Torch Tensors, one per variable.
         """
         raise NotImplementedError
 
@@ -198,6 +182,19 @@ class AnalogLayer(Module, ABC):
         """
         raise NotImplementedError
 
+    def get_core_weights(self) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Gets the weight and bias tensors with errors applied.
+
+        Returns:
+            Tuple of Torch Tensors, one per variable.
+        """
+        w, b = self.core.get_core_weights()
+        w = torch.from_dlpack(w)
+        if not self.analog_bias:
+            return (w, self.bias)
+        else:
+            return (w, torch.from_dlpack(b))
+
     def get_matrix(self) -> torch.Tensor:
         """Returns the programmed 2D analog array.
 
@@ -229,7 +226,7 @@ class AnalogLayer(Module, ABC):
         # formation function and then slice it
         formed_matrix = self.form_matrix().detach()
         if self._consistent_limits():
-            self.core[self.weight_mask] = formed_matrix[self.weight_mask]
+            self.core[self.core.weight_mask] = formed_matrix[self.core.weight_mask]
         else:
             # If this layer has an analog bias but it doesn't exist yet don't
             # bother forming the matrix with dummy data and forming the matrix
@@ -249,7 +246,7 @@ class AnalogLayer(Module, ABC):
         # reimplement layer-specific formation logic.
         formed_matrix = self.form_matrix().detach()
         if self._consistent_limits():
-            self.core[self.bias_mask] = formed_matrix[self.bias_mask]
+            self.core[self.core.bias_mask] = formed_matrix[self.core.bias_mask]
         else:
             self.core.set_matrix(formed_matrix)
 

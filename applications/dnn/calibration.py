@@ -16,7 +16,7 @@ import os
 import numpy.typing as npt
 import numpy as np
 from scipy.optimize import minimize
-from simulator.parameters.core_parameters import CoreStyle
+from simulator.parameters.core_parameters import CoreStyle, BitSlicedCoreStyle
 from simulator.backend import ComputeBackend
 xp = ComputeBackend()
 
@@ -29,6 +29,9 @@ def calibrate_input_limits(
     """Optimizes the input range for all layers in a network given profiled
     input values. This function is intended for use with ResNet CNNs where
     all but the first layer is precded by a ReLU, so inputs are strictly positive.
+
+    Note that this method may not work well for the first layer which has a different
+    value distribution from the other layers!
 
     Args:
         all_xbar_inputs: list of arrays, each array contains profiled input

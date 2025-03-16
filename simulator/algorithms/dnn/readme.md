@@ -13,7 +13,7 @@ CrossSim provides implementations of neural network layers which wrap the Analog
 
 ## Adding New Layers
 ------
-- New layers should subclass `AnalogLayer` and at a minimum implement the `form_matrix` and `apply` methods for a layer as well as a layer-specific `__init__`. 
+- New layers should subclass `AnalogLayer` and at a minimum implement the `form_matrix` `get_core_weights` and `apply` methods for a layer as well as a layer-specific `__init__`. 
 - The `__init__` and `apply` functions should also provide profiling hooks to capture layer inputs and initialize storage for profiling adc inputs. 
 - AnalogLayer provides basic implementations of other functions which are themselves thin wrappers around functions and attributes of the internal AnalogCore.
 

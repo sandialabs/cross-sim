@@ -108,9 +108,6 @@ def set_params(**kwargs):
     if export_conductances:
         params.simulation.disable_fast_balanced = True
 
-    if export_conductances:
-        params.simulation.disable_fast_balanced = True
-
     ############### Crossbar weight mapping settings
 
     if Nslices == 1:

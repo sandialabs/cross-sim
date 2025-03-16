@@ -8,8 +8,7 @@
 
 """CrossSim version of Torch.nn.Linear.
 
-AnalogLinear provides a CrossSim-based forward using analog MVM. Backward is
-implemented using an ideal torch backward (unquantized).
+AnalogLinear provides a CrossSim-based forward and backward using analog MVM.
 """
 
 from __future__ import annotations
@@ -76,12 +75,6 @@ class AnalogLinear(Linear, AnalogLayer):
         # Avoids conditionals on bias and digital_bias
         self.analog_bias = bias and bias_rows > 0
 
-        self.weight_mask = (slice(0, out_features, 1), slice(0, in_features, 1))
-        self.bias_mask = (
-            slice(None, None, 1),
-            slice(in_features, in_features + bias_rows, 1),
-        )
-
         self.core = LinearCore(params, in_features, out_features, bias_rows)
         self.core.set_matrix(self.form_matrix().detach())
 
@@ -109,25 +102,8 @@ class AnalogLinear(Linear, AnalogLayer):
             self.bias,
             self.core,
             self.bias_rows,
+            self.training,
         )
-
-    def get_core_weights(self) -> tuple[Tensor, Tensor | None]:
-        """Gets the weight and bias tensors with errors applied.
-
-        Returns:
-            Tuple of Torch Tensors, 2D for weights, 1D or None for bias
-        """
-        # TODO: Slightly hackish, needed for test passage, remove once we agree on
-        # return device for get_matrix
-        matrix = self.get_matrix()
-        weight = matrix[self.weight_mask].to(self.weight.device)
-        if self.analog_bias:
-            # Summing along dim1 implicitly handles the reshape
-            bias = matrix[self.bias_mask].sum(1).to(self.bias.device)
-        else:
-            bias = self.bias
-
-        return (weight, bias)
 
     def reinitialize(self) -> None:
         """Rebuilds the layer's internal core object.
@@ -281,6 +257,7 @@ class AnalogLinearGrad(Function):
         bias: Tensor | None,
         core: LinearCore,
         bias_rows: int,
+        training: bool,
     ) -> Tensor:
         """CrossSim-based Linear forward.
 
@@ -303,13 +280,22 @@ class AnalogLinearGrad(Function):
             bias_rows:
                 Integer number of rows used for the bias (0 meaning digital
                 bias)
+            training: Linear.training parameter
 
         Returns:
             N-D torch tensor result. Trailing dimension is out_features.
         """
-        ctx.save_for_backward(x, weight, bias)
-
         analog_bias = bias is not None and bool(bias_rows)
+
+        if training:
+            w, b = core.get_core_weights()
+            w = from_dlpack(w)
+            if not analog_bias:
+                b = bias
+            else:
+                b = from_dlpack(b)
+
+            ctx.save_for_backward(x, w, b)
 
         # Get x into a 1D or 2D shape
         if x.ndim < 3:
@@ -335,10 +321,9 @@ class AnalogLinearGrad(Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        """Ideal backward implementation of a Linear layer.
+        """Backward implementation of a Linear layer.
 
-        Uses ideal (unquantized and unnoised) weights (and biases with analog
-        bias) for the gradients. Derived from torch gradient tutorial.
+        Derived from torch gradient tutorial.
         """
         (x, weight, bias) = ctx.saved_tensors
         grad_x = grad_weight = grad_bias = None
@@ -362,4 +347,4 @@ class AnalogLinearGrad(Function):
             else:
                 grad_bias = grad_output.sum(0)
 
-        return grad_x, grad_weight, grad_bias, None, None
+        return grad_x, grad_weight, grad_bias, None, None, None

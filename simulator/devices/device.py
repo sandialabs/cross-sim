@@ -19,7 +19,6 @@ from .custom.RRAM_Milo import RRAMMilo
 from .custom.RRAM_Wan import RRAMWan
 from .custom.SONOS import SONOS
 
-from simulator.circuits import array_simulator
 from typing import Any
 
 from simulator.backend import ComputeBackend

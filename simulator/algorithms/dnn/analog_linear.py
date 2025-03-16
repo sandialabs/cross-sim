@@ -59,6 +59,12 @@ class AnalogLinear(AnalogLayer):
         # Initialize the counter for input profiling.
         self.last_input = 0
 
+        self.weight_mask = (slice(0, out_features, 1), slice(0, in_features, 1))
+        self.bias_mask = (
+            slice(None, None, 1),
+            slice(in_features, in_features + bias_rows, 1),
+        )
+
         self.core = AnalogCore(
             np.zeros((out_features, in_features + bias_rows)),
             params,
@@ -112,6 +118,24 @@ class AnalogLinear(AnalogLayer):
             ).reshape(self.shape[0], self.bias_rows)
 
         return matrix
+
+    def get_core_weights(self) -> tuple[npt.NDArray, npt.NDArray | None]:
+        """Gets the weight and bias matrices with errors applied.
+
+        This function only returns weight and bias values which can be derived from
+        the stored array values. If the layer uses a digital bias the returned bias
+        will be None.
+
+        Returns:
+            Tuple of numpy arrays, 2D for weights, 1D or None for bias.
+        """
+        matrix = self.get_matrix()
+        weight = matrix[self.weight_mask]
+        if self.bias_rows > 0:
+            bias = matrix[self.bias_mask].sum(1)
+            return (weight, bias)
+        else:
+            return (weight, None)
 
     def apply(self, M_input: npt.ArrayLike) -> npt.NDArray:
         """Analog MVM based forward operation for a Linear layer.

@@ -82,7 +82,7 @@ base_params_args = {
     'Rp_col' : 0, # ohms
     'interleaved_posneg' : False,
     'subtract_current_in_xbar' : True,
-    'gate_input' : False,
+    'current_from_input' : True,
     ## Input quantization
     'input_bits' : 8,
     'input_bitslicing' : False,

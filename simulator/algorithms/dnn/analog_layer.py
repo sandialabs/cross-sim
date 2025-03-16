@@ -35,10 +35,19 @@ class AnalogLayer(ABC):
             CrossSimParameters object or list of CrossSimParameters (for layers
             requiring multiple arrays) for the layer. If a list, the length must match
             the number of arrays used within AnalogCore.
+        weight_mask:
+            A (slice, slice) tuple indicating which elements of the analog
+            array store the weights of the matrix.
+        bias_mask:
+            A (slice, slice) tuple indicating which elements of the analog
+            array store the bias if the bias is implemented in analog. Can be
+            empty if `self.analog_bias = False`
     """
 
     core: AnalogCore
     params: CrossSimParameters
+    weight_mask: tuple[slice, slice]
+    bias_mask: tuple[slice, slice]
 
     @abstractmethod
     def form_matrix(
@@ -56,6 +65,19 @@ class AnalogLayer(ABC):
 
         Returns:
             2D numpy ndarray of the matrix.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_core_weights(self) -> tuple[npt.NDArray, npt.NDArray | None]:
+        """Gets the weight and bias matrices with errors applied.
+
+        This function only returns weight and bias values which can be derived from
+        the stored array values. If the layer uses a digital bias the returned bias
+        will be None.
+
+        Returns:
+            Tuple of numpy arrays, 2D for weights, 1D or None for bias.
         """
         raise NotImplementedError
 

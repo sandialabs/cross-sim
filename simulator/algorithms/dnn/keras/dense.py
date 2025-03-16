@@ -110,13 +110,15 @@ class AnalogDense(AnalogLayer, Dense):
         Returns:
             List of numpy arrays with errors applied. CrossSim version of get_weights.
         """
-        matrix = self.get_matrix().T
-        weight = matrix[: self.get_weights()[0].shape[0]]
-        wlist = [weight]
-        if self.use_bias is True:
-            bias = self.bias.numpy()
-            wlist.append(bias)
-        return wlist
+        weight, bias = self.core.get_core_weights()
+        weight = weight.transpose((1, 0))
+
+        if self.use_bias:
+            if not self.analog_bias:
+                bias = self.bias.numpy()
+            return [weight, bias]
+        else:
+            return [weight]
 
     def reinitialize(self) -> None:
         """Rebuilds the layer's internal core object.

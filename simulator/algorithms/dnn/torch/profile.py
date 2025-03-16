@@ -16,10 +16,7 @@ from pathlib import Path
 import numpy.typing as npt
 from torch.nn import Module
 from simulator.algorithms.dnn.torch.convert import analog_modules
-from simulator.algorithms.dnn.torch.conv import AnalogConv1d, AnalogConv2d, AnalogConv3d
-from simulator.algorithms.dnn.torch.linear import AnalogLinear
 from simulator.parameters.core_parameters import CoreStyle, BitSlicedCoreStyle
-
 from simulator.backend import ComputeBackend
 
 xp = ComputeBackend()
@@ -43,16 +40,11 @@ def get_profiled_xbar_inputs(
     k = 0
     for layer in analog_modules(model):
         if layer.core.params.simulation.analytics.profile_xbar_inputs:
-            if type(layer) in (AnalogConv1d, AnalogConv2d, AnalogConv3d):
-                if layer.core.params.simulation.useGPU:
-                    all_xbar_inputs[k] = layer.core.xbar_inputs.get().flatten()
-                else:
-                    all_xbar_inputs[k] = layer.core.xbar_inputs.flatten()
-
-            if type(layer) is AnalogLinear:
-                all_xbar_inputs[k] = layer.xbar_inputs.cpu().numpy().flatten()
-
-            k += 1
+            if layer.core.params.simulation.useGPU:
+                all_xbar_inputs[k] = layer.core.xbar_inputs.get().flatten()
+            else:
+                all_xbar_inputs[k] = layer.core.xbar_inputs.flatten()
+        k += 1
 
     if save_dir is not None:
         save_path = Path(save_dir) / "all_xbar_inputs.p"
@@ -118,7 +110,7 @@ def get_profiled_adc_inputs(
                     all_adc_inputs_k[j, :, :] = bitslice_inputs_j
 
             all_adc_inputs[k] = all_adc_inputs_k
-            k += 1
+        k += 1
 
     if save_dir is not None:
         save_path = Path(save_dir) / "all_adc_inputs.p"

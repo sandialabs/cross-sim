@@ -2,7 +2,7 @@
 
 This directory contains a CrossSim wrapper for PyTorch layers to enable testing of neural networks using CrossSim's analog MVM simulation engine. Implemented layers are intended to be drop-in compatible with equivalent PyTorch layers and should behave similarly to the equivalent PyTorch layers when no CrossSim non-idealities are enabled. Note: though differences in the results will be small in this ideal case, **exactly identical numerical results between PyTorch layers and the CrossSim equivalents should not be expected.**
 
-All implemented layers support adding the bias in either digital or analog by applying the bias across 1 or more rows within the array. Additionally, all implemented layers provide a gradient computation for CrossSim-in-the-loop training, where ideal weights are assumed in the backward pass. Gradient computations using non-ideal weights in the backward pass are not currently supported.
+All implemented layers support adding the bias in either digital or analog by applying the bias across 1 or more rows within the array. Additionally, all implemented layers provide a gradient computation for CrossSim-in-the-loop training.
 
 ### Supported Layers:
 - Linear
@@ -32,7 +32,7 @@ CrossSim will automatically keep the torch view of the weights and the core weig
 
 The analog simulation parameters (CrossSimParamters) of an analog layer can be updated without rebuilding the layer using the `reinitialize()` function. This function is automatically called if either `layer.params` or `layer.bias_rows` is updated. `reinitialize()` directly rebuilds the underlying AnalogCore so it can also be used to resample the initialization-time errors. Importantly, even if no parameters impacting initialization-time errors are modified, any change to the internal params object will resample all initialization-time errors and should be handled as discussed for `synchronize` above.
 
-CrossSim analog layers provide two methods for viewing the CrossSim version of weights. `get_matrix()` wraps the internal AnalogCore `get_matrix()` function and provides a view of the 2D matrix programmed into the array or arrays. `get_core_weights()` reshapes the 2D matrix into the same shape as the torch weight matrix. This is useful for analyzing element-wise error.
+CrossSim analog layers provide two methods for viewing the CrossSim version of weights. `get_matrix()` wraps the internal AnalogCore `get_matrix()` function and provides a view of the 2D matrix programmed into the array or arrays. `get_core_weights()` reshapes the 2D matrix into the same shape as the torch weight matrix. This is useful for analyzing element-wise error. `get_core_weights` is also used for analog-aware training to compute the gradients with respect to the programmed rather than ideal matrices.
 
 ## Working with Torch Models
 ------
@@ -53,14 +53,12 @@ where `input` is the input data, and `output` is the simulated output of the ana
 ### Analog-Aware Training with CrossSim
 Models containing analog layers can be directly integrated into existing training flows with a minor change. After the optimizer update step, call `synchronize(model)` since the built-in torch optimizers use in-place updates. An example of this can be see in section 2.3 of [this tutorial](../../../tutorial/NICE24/tutorial_pt2.ipynb).
 
-Importantly, gradients are calculated compared to to the ideal (torch version) of the weights rather than the non-ideal CrossSim view.
-
 ## Adding New Analog PyTorch Layers
 ------
-New analog PyTorch layers should inherit from both the baseline torch layer and the CrossSim torch AnalogLayer in [layer.py](layer.py) in that order. The full list of attributes that should be included in a new analog torch layer can be found in [layer.py](layer.py). Implementing classes should also implement the following functions: `form_matrix`, `get_core_weights`, `reinitialize`, `from_torch`, `to_torch` and `forward` as defined in [layer.py](layer.py). 
+New analog PyTorch layers should inherit from both the baseline torch layer and the CrossSim torch AnalogLayer in [layer.py](layer.py) in that order. The full list of attributes that should be included in a new analog torch layer can be found in [layer.py](layer.py). Implementing classes should also implement the following functions: `form_matrix`, `reinitialize`, `from_torch`, `to_torch` and `forward` as defined in [layer.py](layer.py). 
 
 Layer functionality that is not specific to PyTorch should be implemented based on the AnalogLayer base class in [analog_layer.py](../analog_layer.py). Torch implementations should focus on torch-specific behavior and/or interfacing with torch, for instance converting between numpy arrays and torch tensors. For compatibility with both CPU and GPU implementations, wrap all numpy arrays coming from CrossSim in `torch.from_dlpack()` and ensure that all Torch tensors are detached before passing them into CrossSim.
 
-To support gradient computation, the forward function should call into a separate AnalogGradient class which inherits from `torch.autograd.Function`. This class should implement both the forward call (again deferring all non-torch specific behavior to the core object) and an ideal backward function.
+To support gradient computation, the forward function should call into a separate AnalogGradient class which inherits from `torch.autograd.Function`. This class should implement both the forward call (again deferring all non-torch specific behavior to the core object) and a backward function. To improve the convergence of analog-aware training the forward function should save the CrossSim view of the weights (from `get_core_weights`) which will be used for the gradient calculation in the backward pass.
 
 The torch [AnalogLinear](linear.py) class is a good example of how to implement new layers.

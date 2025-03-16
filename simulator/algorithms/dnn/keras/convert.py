@@ -354,11 +354,17 @@ def _convert_sequential_from_keras(model, params, bias_rows, fuse_batchnorm: boo
 
         elif isinstance(layer, Sequential):
             analog_layer = _convert_sequential_from_keras(
-                layer, params, bias_rows, fuse_batchnorm,
+                layer,
+                params,
+                bias_rows,
+                fuse_batchnorm,
             )
         elif isinstance(layer, Functional):
             analog_layer = _convert_functional_from_keras(
-                layer, params, bias_rows, fuse_batchnorm,
+                layer,
+                params,
+                bias_rows,
+                fuse_batchnorm,
             )
         else:
             analog_layer = copy(layer)
@@ -453,12 +459,18 @@ def _convert_functional_from_keras(model, params, bias_rows, fuse_batchnorm: boo
             continue
         elif isinstance(layer, Sequential):
             new_layer = _convert_sequential_from_keras(
-                layer, params, bias_rows, fuse_batchnorm,
+                layer,
+                params,
+                bias_rows,
+                fuse_batchnorm,
             )
             x = new_layer(x)
         elif isinstance(layer, Functional):
             new_layer = _convert_functional_from_keras(
-                layer, params, bias_rows, fuse_batchnorm,
+                layer,
+                params,
+                bias_rows,
+                fuse_batchnorm,
             )
             x = new_layer(x)
         else:
@@ -565,6 +577,6 @@ def _create_network_dict(model):
 
 def _val_from_list(item):
     if isinstance(item, list):
-        return item.pop()
+        return item.pop(0)
     else:
         return item

@@ -70,7 +70,7 @@ base_params_args = {
     'Rp_col' : 0, # ohms
     'interleaved_posneg' : False,
     'subtract_current_in_xbar' : True,
-    'gate_input' : False,
+    'current_from_input' : True,
     ## Input quantization
     'input_bits' : 8,
     'input_bitslicing' : False,
@@ -90,23 +90,16 @@ input_ranges = np.load("./calibrated_config/dac_limits_ResNet50v15.npy")
 ### Load ADC limits
 adc_ranges = find_adc_range(base_params_args, n_layers)
 
-### Load (x_par, y_par) values
-xy_pars = np.load("./calibrated_config/resnet50_xy.npy")
-if base_params_args['Rp_row'] > 0 or base_params_args['Rp_col'] > 0:
-    xy_pars = np.load("./calibrated_config/resnet50_xy_parasitics.npy")
-
 ### Set the parameters
 for k in range(n_layers):
     params_args_k = base_params_args.copy()
     params_args_k['positiveInputsOnly'] = (False if k == 0 else True)
     params_args_k['input_range'] = input_ranges[k]
     params_args_k['adc_range'] = adc_ranges[k]
-    params_args_k['x_par'] = xy_pars[k,0]
-    params_args_k['y_par'] = xy_pars[k,1]
     params_list[k] = dnn_inference_params(**params_args_k)
 
 # Convert Keras layers to analog layers
-analog_resnet50 = from_keras(resnet50_model, params_list, fuse_batchnorm=False, bias_rows=0)
+analog_resnet50 = from_keras(resnet50_model, params_list, fuse_batchnorm=True, bias_rows=0)
 analog_resnet50.compile(run_eagerly=True)
 
 #### Load pre-processed ImageNet dataset

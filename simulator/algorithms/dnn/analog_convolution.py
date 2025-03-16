@@ -101,6 +101,15 @@ class AnalogConvolution(AnalogLayer):
 
         self._synchronize_params()
 
+        self.weight_mask = (
+            slice(0, Noc, 1),
+            slice(0, prod(kernel_size) * Nic, 1),
+        )
+        self.bias_mask = (
+            slice(None, None, 1),
+            slice(self.weight_mask[1].stop, self.weight_mask[1].stop + bias_rows, 1),
+        )
+
         self.core = AnalogCore(
             np.zeros((Noc, prod(kernel_size) * Nic + bias_rows)),
             params,
@@ -130,6 +139,41 @@ class AnalogConvolution(AnalogLayer):
             for j in range(self.core.num_cores_row):
                 for k in range(self.core.num_cores_col):
                     self.core.cores[j][k].expand_matrix(Ncopy)
+
+    def get_core_weights(self) -> tuple[npt.NDArray, npt.NDArray | None]:
+        """Gets the weight and bias matrices with errors applied.
+
+        This function only returns weight and bias values which can be derived from
+        the stored array values. If the layer uses a digital bias the returned bias
+        will be None.
+
+        Returns:
+            Tuple of numpy arrays, 2D for weights, 1D or None for bias.
+        """
+        matrix = self.get_matrix()
+        if self.groups == 1:
+            weight = matrix[self.weight_mask].reshape(
+                (self.Noc, self.Nic, *self.kernel_size),
+            )
+        else:
+            weight = xp.zeros(
+                (self.Noc, self.Nic // self.groups, *self.kernel_size),
+                dtype=matrix.dtype,
+            )
+            weights_per_out = prod(weight.shape[1:])
+            outs_per_group = self.Noc // self.groups
+            for i in range(self.Noc):
+                group = i // outs_per_group
+                weight[i] = matrix[
+                    i,
+                    group * weights_per_out : (group + 1) * weights_per_out,
+                ].reshape(weight.shape[1:])
+
+        if self.bias_rows > 0:
+            bias = matrix[self.bias_mask].sum(1)
+            return (weight, bias)
+        else:
+            return (weight, None)
 
     def form_matrix(
         self,

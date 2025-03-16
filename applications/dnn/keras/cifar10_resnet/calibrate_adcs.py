@@ -31,10 +31,10 @@ for gpu_device in tf.config.experimental.list_physical_devices('GPU'):
 # n = 3 : ResNet-20 (272K weights)
 # n = 5 : ResNet-32 (467K weights)
 # n = 9 : ResNet-56 (856K weights)
-n = 9
+n = 3
 
 useGPU = True # use GPU?
-N = 1000 # number of images
+N = 500 # number of images
 batch_size = 32
 Nruns = 1
 print_progress = True
@@ -84,7 +84,7 @@ base_params_args = {
     'Rp_col' : 0, # ohms
     'interleaved_posneg' : False,
     'subtract_current_in_xbar' : True,
-    'gate_input' : False,
+    'current_from_input' : True,
     ## Input quantization
     'input_bits' : 8,
     'input_bitslicing' : False,

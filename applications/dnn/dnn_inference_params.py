@@ -35,6 +35,8 @@ def dnn_inference_params(**kwargs):
 
     Rp_row = kwargs.get("Rp_row",0)
     Rp_col = kwargs.get("Rp_col",0)
+    Rp_row_terminal = kwargs.get("Rp_row_terminal",0)
+    Rp_col_terminal = kwargs.get("Rp_col_terminal",0)
     NrowsMax = kwargs.get("NrowsMax",None)
     NcolsMax = kwargs.get("NcolsMax",None)
     weight_bits = kwargs.get("weight_bits",0)
@@ -47,13 +49,14 @@ def dnn_inference_params(**kwargs):
     adc_type = kwargs.get("adc_type","generic")
     positiveInputsOnly = kwargs.get("positiveInputsOnly",False)
     interleaved_posneg = kwargs.get("interleaved_posneg",False)
+    current_from_input = kwargs.get("current_from_input",True)
+    selected_rows = kwargs.get("selected_rows","top")
     subtract_current_in_xbar = kwargs.get("subtract_current_in_xbar",True)
     Rmin = kwargs.get("Rmin", 1000)
     Rmax = kwargs.get("Rmax", 10000)
     Vread = kwargs.get("Vread",0.1)
     infinite_on_off_ratio = kwargs.get("infinite_on_off_ratio", True)
-    gate_input = kwargs.get("gate_input",True)
-
+    
     Nslices = kwargs.get("Nslices",1)    
     digital_offset = kwargs.get("digital_offset",True)
     adc_range_option = kwargs.get("adc_range_option","CALIBRATED")
@@ -64,19 +67,16 @@ def dnn_inference_params(**kwargs):
     y_par = kwargs.get("y_par",1)
     useGPU = kwargs.get("useGPU",False)
     gpu_id = kwargs.get("gpu_id",0)
-    disable_fast_balanced = kwargs.get("disable_fast_balanced",False)
 
     profile_xbar_inputs = kwargs.get("profile_xbar_inputs",False)
     profile_adc_inputs = kwargs.get("profile_adc_inputs",False)
-    profile_adc_reluAware = kwargs.get("profile_adc_reluAware",False)
     ntest = kwargs.get("ntest",1)
 
     balanced_style = kwargs.get("balanced_style","ONE_SIDED")
     input_bitslicing = kwargs.get("input_bitslicing",False)
     input_slice_size = kwargs.get("input_slice_size",1)
     adc_per_ibit = kwargs.get("adc_per_ibit",False)
-    disable_parasitics_slices = kwargs.get("disable_parasitics_slices",None)
-
+    
     ################  create parameter objects with all core settings
     params = CrossSimParameters()
 
@@ -85,27 +85,9 @@ def dnn_inference_params(**kwargs):
     if useGPU:
         params.simulation.gpu_id = gpu_id
 
-    # Enable conv matmul?
-    # These cases cannot be realistically modeled with matmul
-    noCM_cond1 = (Rp_col > 0)
-    noCM_cond2 = (Rp_row > 0 and not gate_input)
-    noCM_cond3 = (noise_model == "generic" and alpha_noise > 0)
-    noCM_cond4 = (noise_model != "none" and noise_model != "generic")
-    if not ideal and any([noCM_cond1, noCM_cond2, noCM_cond3, noCM_cond4]):
-        params.simulation.disable_fast_matmul = True
-    else:
-        params.simulation.disable_fast_matmul = False
-        x_par, y_par = 1, 1
-
-    if profile_adc_inputs:
-        x_par, y_par = 1, 1
-
-    # Multiple convolutional MVMs in parallel? (only used if disable_fast_matmul = True)
-    params.simulation.convolution.x_par = int(x_par) # Number of sliding window steps to do in parallel (x)
-    params.simulation.convolution.y_par = int(y_par) # Number of sliding window steps to do in parallel (y)
-    
-    if core_style == "BALANCED":
-        params.simulation.disable_fast_balanced = disable_fast_balanced
+    # Parameters for SW packing mode (only used if simulation.disable_fast_matmul = True)
+    params.simulation.convolution.x_par = int(x_par)
+    params.simulation.convolution.y_par = int(y_par)
 
     if ideal:
         return params
@@ -170,20 +152,21 @@ def dnn_inference_params(**kwargs):
 
     ############### Parasitic resistance
 
-    if Rp_col > 0 or Rp_row > 0:
+    if Rp_col > 0 or Rp_row > 0 or Rp_col_terminal > 0 and Rp_row_terminal > 0:
         # Bit line parasitic resistance
         params.xbar.array.parasitics.enable = True
-        params.xbar.array.parasitics.Rp_col = Rp_col/Rmin
-        params.xbar.array.parasitics.Rp_row = Rp_row/Rmin
-        params.xbar.array.parasitics.gate_input = gate_input
-
-        if gate_input and Rp_col == 0:
-            params.xbar.array.parasitics.enable = False
+        params.xbar.array.parasitics.Rp_col = Rp_col
+        params.xbar.array.parasitics.Rp_row = Rp_row
+        params.xbar.array.parasitics.Rp_col_terminal = Rp_col_terminal
+        params.xbar.array.parasitics.Rp_row_terminal = Rp_row_terminal
+        params.xbar.array.parasitics.current_from_input = current_from_input
+        params.xbar.array.parasitics.selected_rows = selected_rows
 
         # Numeric params related to parasitic resistance simulation
         params.simulation.Niters_max_parasitics = 100
         params.simulation.Verr_th_mvm = 2e-4
         params.simulation.relaxation_gamma = 0.9 # under-relaxation
+        params.simulation.Verr_matmul_criterion = "max_mean" # max over array, max over MVMs
 
     ############### Weight bit slicing
 
@@ -202,10 +185,6 @@ def dnn_inference_params(**kwargs):
         else:
             cell_bits = int(np.ceil(weight_bits/Nslices))
         params.core.bit_sliced.num_slices = Nslices
-        if disable_parasitics_slices is not None:
-            params.xbar.array.parasitics.disable_slices = disable_parasitics_slices
-        else:
-            params.xbar.array.parasitics.disable_slices = [False]*Nslices
 
     # Weights
     params.core.weight_bits = int(weight_bits)
@@ -220,7 +199,7 @@ def dnn_inference_params(**kwargs):
     ###################### Analytics
 
     params.simulation.analytics.profile_xbar_inputs = profile_xbar_inputs
-    params.simulation.analytics.profile_adc_inputs = (profile_adc_inputs and not profile_adc_reluAware)
+    params.simulation.analytics.profile_adc_inputs = profile_adc_inputs
     params.simulation.analytics.ntest = ntest
 
     ###################### DAC settings

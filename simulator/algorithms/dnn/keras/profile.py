@@ -16,10 +16,7 @@ from pathlib import Path
 import numpy.typing as npt
 from keras.layers import Layer
 from simulator.algorithms.dnn.keras.convert import analog_layers
-from simulator.algorithms.dnn.keras.conv import AnalogConv1D, AnalogConv2D, AnalogConv3D
-from simulator.algorithms.dnn.keras.dense import AnalogDense
 from simulator.parameters.core_parameters import CoreStyle, BitSlicedCoreStyle
-
 from simulator.backend import ComputeBackend
 
 xp = ComputeBackend()
@@ -43,16 +40,11 @@ def get_profiled_xbar_inputs(
     k = 0
     for layer in analog_layers(model):
         if layer.core.params.simulation.analytics.profile_xbar_inputs:
-            if type(layer) in (AnalogConv1D, AnalogConv2D, AnalogConv3D):
-                if layer.core.params.simulation.useGPU:
-                    all_xbar_inputs[k] = layer.core.xbar_inputs.get().flatten()
-                else:
-                    all_xbar_inputs[k] = layer.core.xbar_inputs.flatten()
-
-            if type(layer) is AnalogDense:
-                all_xbar_inputs[k] = layer.xbar_inputs.flatten()
-
-            k += 1
+            if layer.core.params.simulation.useGPU:
+                all_xbar_inputs[k] = layer.core.xbar_inputs.get().flatten()
+            else:
+                all_xbar_inputs[k] = layer.core.xbar_inputs.flatten()
+        k += 1
 
     if save_dir is not None:
         save_path = Path(save_dir) / "all_xbar_inputs.p"
@@ -118,7 +110,7 @@ def get_profiled_adc_inputs(
                     all_adc_inputs_k[j, :, :] = bitslice_inputs_j
 
             all_adc_inputs[k] = all_adc_inputs_k
-            k += 1
+        k += 1
 
     if save_dir is not None:
         save_path = Path(save_dir) / "all_adc_inputs.p"

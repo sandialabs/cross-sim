@@ -96,7 +96,9 @@
                 "enable": false,
                 "Rp_row": 0,
                 "Rp_col": 0,
-                "gate_input": false
+                "Rp_row_terminal": 0,
+                "Rp_col_terminal": 0,
+                "current_from_input": true,
             }
         },
         "adc": {

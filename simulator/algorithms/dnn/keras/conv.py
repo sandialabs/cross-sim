@@ -24,8 +24,6 @@ from simulator.algorithms.dnn.analog_convolution import (
 
 from keras.layers import Conv1D, Conv2D, Conv3D, DepthwiseConv1D, DepthwiseConv2D
 from keras import ops
-import numpy as np
-
 from tensorflow.experimental.dlpack import from_dlpack
 
 import numpy.typing as npt
@@ -153,36 +151,11 @@ class AnalogBaseConv(AnalogLayer):
         Returns:
             List of numpy arrays with errors applied. CrossSim version of get_weights
         """
-        matrix = self.get_matrix()
-
-        Nic = (
-            self.input_spec.axes[-1]
-            if self.data_format == "channels_last"
-            else self.input_spec.axes[1]
-        )
-        w_inputs = ops.prod(self.kernel_size) * Nic
-
-        if self.groups == 1:
-            weight = matrix[:, :w_inputs].reshape(self.filters, Nic, *self.kernel_size)
-        else:
-            # Need to use numpy zeros rather than ops because with TF backends
-            # ops creates an EagerTensor which doesn't support item assignment
-            weight = np.zeros((self.filters, Nic // self.groups, *self.kernel_size))
-            weights_per_out = ops.prod(weight.shape[1:])
-            outs_per_group = self.filters // self.groups
-            for i in range(self.filters):
-                group = i // outs_per_group
-                weight[i] = matrix[
-                    i,
-                    group * weights_per_out : (group + 1) * weights_per_out,
-                ].reshape(weight.shape[1:])
-
-        weight = ops.transpose(weight, self._get_core_weight_order)
+        weight, bias = self.core.get_core_weights()
+        weight = weight.transpose(self._get_core_weight_order)
 
         if self.use_bias:
-            if self.analog_bias:
-                bias = matrix[:, w_inputs:].sum(1)
-            else:
+            if not self.analog_bias:
                 bias = self.bias.numpy()
             return [weight, bias]
         else:
@@ -258,34 +231,13 @@ class AnalogDepthwiseConv(AnalogBaseConv):
         Returns:
             List of numpy arrays with errors applied. CrossSim version of get_weights.
         """
-        matrix = self.get_matrix()
+        weight, bias = self.core.get_core_weights()
 
-        Nic = (
-            self.input_spec.axes[-1]
-            if self.data_format == "channels_last"
-            else self.input_spec.axes[1]
-        )
-        w_inputs = ops.prod(self.kernel_size) * Nic
-
-        # Need to use numpy zeros rather than ops because with TF backends
-        # ops creates an EagerTensor which doesn't support item assignment
-        weight = np.zeros((self.depth_multiplier * Nic, 1, *self.kernel_size))
-        weights_per_out = ops.prod(weight.shape[1:])
-        outs_per_group = self.depth_multiplier
-        for i in range(self.depth_multiplier * Nic):
-            group = i // outs_per_group
-            weight[i] = matrix[
-                i,
-                group * weights_per_out : (group + 1) * weights_per_out,
-            ].reshape(weight.shape[1:])
-
-        weight = ops.transpose(weight, self._get_core_weight_order)
-        weight = ops.reshape(weight, (*self.kernel_size, -1, self.depth_multiplier))
+        weight = weight.transpose(self._get_core_weight_order)
+        weight = weight.reshape((*self.kernel_size, -1, self.depth_multiplier))
 
         if self.use_bias:
-            if self.analog_bias:
-                bias = matrix[:, w_inputs:].sum(1)
-            else:
+            if not self.analog_bias:
                 bias = self.bias.numpy()
             return [weight, bias]
         else:

@@ -38,6 +38,8 @@ def set_params(**kwargs):
 
     Rp_row = kwargs.get("Rp_row",0)
     Rp_col = kwargs.get("Rp_col",0)
+    Rp_row_terminal = kwargs.get("Rp_row_terminal",0)
+    Rp_col_terminal = kwargs.get("Rp_col_terminal",0)
     Rmin = kwargs.get("Rmin", 1000)
     Rmax = kwargs.get("Rmax", 10000)
     infinite_on_off_ratio = kwargs.get("infinite_on_off_ratio", False)
@@ -55,7 +57,8 @@ def set_params(**kwargs):
     positiveInputsOnly = kwargs.get("positiveInputsOnly",False)
     interleaved_posneg = kwargs.get("interleaved_posneg",False)
     subtract_current_in_xbar = kwargs.get("subtract_current_in_xbar",True)
-    gate_input = kwargs.get("gate_input",False)
+    current_from_input = kwargs.get("current_from_input",True)
+    selected_rows = kwargs.get("selected_rows","top")
 
     Nslices = kwargs.get("Nslices",1)    
     digital_offset = kwargs.get("digital_offset",True)
@@ -69,7 +72,6 @@ def set_params(**kwargs):
     input_bitslicing = kwargs.get("input_bitslicing",False)
     input_slice_size = kwargs.get("input_slice_size",1)
     ADC_per_ibit = kwargs.get("ADC_per_ibit",False)
-    disable_parasitics_slices = kwargs.get("disable_parasitics_slices",None)
 
     ################  create parameter objects with all core settings
     params = CrossSimParameters()
@@ -143,17 +145,18 @@ def set_params(**kwargs):
 
     if Rp_col > 0 or Rp_row > 0:
         params.xbar.array.parasitics.enable = True
-        params.xbar.array.parasitics.Rp_col = Rp_col/Rmin
-        params.xbar.array.parasitics.Rp_row = Rp_row/Rmin
-        params.xbar.array.parasitics.gate_input = gate_input
-
-        if gate_input and Rp_col == 0:
-            params.xbar.array.parasitics.enable = False
+        params.xbar.array.parasitics.Rp_col = Rp_col
+        params.xbar.array.parasitics.Rp_row = Rp_row
+        params.xbar.array.parasitics.Rp_col_terminal = Rp_col_terminal
+        params.xbar.array.parasitics.Rp_row_terminal = Rp_row_terminal
+        params.xbar.array.parasitics.current_from_input = current_from_input
+        params.xbar.array.parasitics.selected_rows = selected_rows
 
         # Numeric params related to parasitic resistance simulation
         params.simulation.Niters_max_parasitics = 100
         params.simulation.Verr_th_mvm = 2e-4
         params.simulation.relaxation_gamma = 0.9 # under-relaxation
+        params.simulation.Verr_matmul_criterion = "max_mean" # max over array, max over MVMs
 
     ############### Weight bit slicing
 
@@ -173,10 +176,6 @@ def set_params(**kwargs):
             cell_bits = int(np.ceil(weight_bits/Nslices))
 
         params.core.bit_sliced.num_slices = Nslices
-        if disable_parasitics_slices is not None:
-            params.xbar.array.parasitics.disable_slices = disable_parasitics_slices
-        else:
-            params.xbar.array.parasitics.disable_slices = [False]*Nslices
 
     # Weights
     params.core.weight_bits = int(weight_bits)
