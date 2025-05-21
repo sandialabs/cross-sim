@@ -1,15 +1,17 @@
 """
 Parameterizable inference simulation script for CIFAR-10 ResNets.
 """
-
+import os
 import torch
 from torchvision import datasets, transforms
 import numpy as np
 import warnings, sys, time
 from build_resnet_cifar10 import ResNet_cifar10
 warnings.filterwarnings('ignore')
-sys.path.append("../../") # to import dnn_inference_params
-sys.path.append("../../../../") # to import simulator
+#sys.path.append("../../") # to import dnn_inference_params
+#sys.path.append("../../../../") # to import simulator
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),"../../"))) # to import dnn_inference_params
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),"../../../../"))) # to import simulator
 from simulator import CrossSimParameters
 from simulator.algorithms.dnn.torch.convert import from_torch, convertible_modules, reinitialize
 from find_adc_range import find_adc_range
@@ -23,7 +25,7 @@ from dnn_inference_params import dnn_inference_params
 # n = 9 : ResNet-56 (856K weights)
 n = 3
 
-useGPU = True # use GPU?
+useGPU = False # use GPU?
 N = 10000 # number of images
 batch_size = 64
 Nruns = 1
@@ -40,9 +42,12 @@ device = torch.device("cuda:0" if (torch.cuda.is_available() and useGPU) else "c
 ##### Load Pytorch model
 resnet_model = ResNet_cifar10(n)
 resnet_model = resnet_model.to(device)
+#resnet_model.load_state_dict(
+#    torch.load('./models/resnet{:d}_cifar10.pth'.format(depth),
+#    map_location=torch.device(device)))
+model_path = os.path.join(os.path.dirname(__file__), 'models','resnet{:d}_cifar10.pth'.format(depth))
 resnet_model.load_state_dict(
-    torch.load('./models/resnet{:d}_cifar10.pth'.format(depth),
-    map_location=torch.device(device)))
+      torch.load(model_path, map_location=torch.device(device)))
 resnet_model.eval()
 n_layers = len(convertible_modules(resnet_model))
 
@@ -95,7 +100,7 @@ base_params_args = {
     }
 
 ### Load input limits
-input_ranges = np.load("./calibrated_config/input_limits_ResNet{:d}.npy".format(depth))
+input_ranges = np.load(os.path.join(os.path.dirname(__file__),'calibrated_config/input_limits_ResNet{:d}.npy').format(depth))
 
 ### Load ADC limits
 adc_ranges = find_adc_range(base_params_args, n_layers, depth)
