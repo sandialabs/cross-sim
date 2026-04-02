@@ -1,6 +1,7 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
+# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+# Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
@@ -12,21 +13,22 @@ from simulator.circuits.adc.adc import ADC
 from simulator.circuits.dac.dac import DAC
 from simulator.backend import ComputeBackend
 
-xp = ComputeBackend()
-
 import numpy.typing as npt
 from typing import Callable
 from . import NumericCore
+
+xp = ComputeBackend()
 
 
 class OffsetCore(WrapperCore):
     """An offset core consisting of a single inner core.
 
-    The middle value in the dynamic range of the inner core is used to store :code:`0.0`.
-
+    The middle value in the dynamic range of the inner core is used to store
+    `0.0`.
     """
 
     def __init__(self, clipper_core_factory: Callable[[], NumericCore], params) -> None:
+        """Initializes a core object."""
         WrapperCore.__init__(self, clipper_core_factory, params)
 
         self.core = clipper_core_factory()
@@ -62,11 +64,12 @@ class OffsetCore(WrapperCore):
     ):
         matrix_norm = matrix / (2 * self.max)
 
-        # To get optimal accuracy with OffsetCore, we need to ensure that the # utilized cell
-        # conductance levels is odd. This ensures that there will be a conductance level that
-        # corresponds to a weight value of zero. Since the actual number of levels is even, we
-        # have to make sure the bottom level is unused.
-        # This is done by very slightly compressing the xbar conductance range.
+        # To get optimal accuracy with OffsetCore, we need to ensure that the
+        # utilized cell conductance levels is odd. This ensures that there will
+        # be a conductance level that corresponds to a weight value of zero.
+        # Since the actual number of levels is even, we have to make sure the
+        # bottom level is unused. This is done by very slightly compressing the
+        # xbar conductance range.
 
         if self.device_params.cell_bits > 0:
             self.Wrange_xbar = (
@@ -81,7 +84,8 @@ class OffsetCore(WrapperCore):
 
         if not self.digital_offset:
             # Zero-point column
-            # This currently is only compatible with MVM, since it adds a column and not a row
+            # This currently is only compatible with MVM, since it adds a column
+            # and not a row
             # For some reason, cupy does not have an insert method
             if self.params.simulation.useGPU:
                 matrix_norm = xp.asarray(np.insert(matrix_norm.get(), 0, 0, axis=0))
@@ -111,8 +115,9 @@ class OffsetCore(WrapperCore):
                 magbits = 1
             Nout_mvm = matrix.shape[0]
             Nmvms = self.analytics_params.ntest
-            # For convolutions, the size of the second dimension will be further scaled on the first
-            # mvm call, when the number of sliding windows per input is known
+            # For convolutions, the size of the second dimension will be further
+            # scaled on the first mvm call, when the number of sliding windows
+            # per input is known
             self.adc_inputs = xp.zeros((magbits, Nmvms * Nout_mvm), dtype=xp.float32)
             self.last_adc_input = 0
 
@@ -134,7 +139,11 @@ class OffsetCore(WrapperCore):
         vector = self.core.vector_mvm
         return self.run_xbar_operation(op, vector)
 
-    def run_xbar_operation(self, op: str, vector: npt.NDArray) -> npt.NDArray:
+    def run_xbar_operation(  # noqa:C901
+        self,
+        op: str,
+        vector: npt.NDArray,
+    ) -> npt.NDArray:
         """Run the specified operation (vmm or mvm) with the supplied vector.
 
         Args:
@@ -167,7 +176,7 @@ class OffsetCore(WrapperCore):
             )
 
         ################################
-        ##  ANALOG INPUT ENCODING
+        # ANALOG INPUT ENCODING
         ################################
         if not dac_params.input_bitslicing:
             output = core_operation(vector)
@@ -182,7 +191,7 @@ class OffsetCore(WrapperCore):
                 self.adc_inputs[0, i1:i2] = xp.array(output.flatten(), dtype=xp.float32)
 
         ################################
-        ##  INPUT BIT SLICING
+        # INPUT BIT SLICING
         ################################
         else:
             # Input bit slicing (bit serial)
@@ -197,7 +206,8 @@ class OffsetCore(WrapperCore):
                 output_k = core_operation(vector_slices[k])
 
                 # Clip the accumulated current on each column
-                # This clipping is done by the analog integrator rather than by the ADC
+                # This clipping is done by the analog integrator rather than by
+                # the ADC
                 if self.clip_Icol:
                     output_k = output_k.clip(-self.Icol_max, self.Icol_max)
 
@@ -206,7 +216,8 @@ class OffsetCore(WrapperCore):
                     i1 = self.last_adc_input
                     i2 = self.last_adc_input + num_inputs
                     self.adc_inputs[k, i1:i2] = xp.array(
-                        output_k.flatten(), dtype=xp.float32,
+                        output_k.flatten(),
+                        dtype=xp.float32,
                     )
 
                 # ADC
@@ -231,7 +242,7 @@ class OffsetCore(WrapperCore):
         if self.analytics_params.profile_adc_inputs:
             self.last_adc_input += num_inputs
 
-        ##### Quantize and subtract offset
+        # Quantize and subtract offset
 
         # clip and quantize result
         if not adc_params.adc_per_ibit:
@@ -321,10 +332,12 @@ class OffsetCore(WrapperCore):
         return self.core._restore_matrix(matrix)
 
     def expand_matrix(self, Ncopy):
+        """Expands the matrix to allow for parallel simulation."""
         # Calls expand_matrix in the inner cores
         # Makes multiple copies of matrix to compute multiple MVMs in parallel
         self.core.expand_matrix(Ncopy)
 
     def unexpand_matrix(self):
+        """Undoes the expand_matrix operation. Forms a single matrix."""
         # Calls unexpand_matrix in the inner cores
         self.core.unexpand_matrix()

@@ -1,6 +1,7 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
+# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+# Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
@@ -16,16 +17,12 @@ xp = ComputeBackend()
 
 
 class BitslicedCore(WrapperCore):
-    """A core consisting of two or more arrays that implements bit-sliced weights
-    At least two slices are required (otherwise, use balanced core).
+    """A core consisting of two or more arrays that implements bit-sliced
+    weights. At least two slices are required (otherwise, use balanced core).
     """
 
     def __init__(self, clipper_core_factory, params):
-        """:param clipper_core_factory:
-        :param params: all parameters
-        :type params: Parameters
-        :return:
-        """
+        """Initializes a core object."""
         WrapperCore.__init__(self, clipper_core_factory, params)
 
         Nslices = params.core.bit_sliced.num_slices
@@ -77,10 +74,13 @@ class BitslicedCore(WrapperCore):
 
         self.i_op = 0
 
-    def _wrapper_set_matrix(self, matrix, weight_limits=None, error_mask=None):
+    def _wrapper_set_matrix(  # noqa:C901
+        self, matrix, weight_limits=None, error_mask=None
+    ):
         # Quantize weights here, and not in numeric_core
-        # Wbits as set in inference_net is the number of weight bits per device, assuming a balanced core
-        # In this case we add one to get the true number of weight bits (pos and neg)
+        # Wbits as set in inference_net is the number of weight bits per device,
+        # assuming a balanced core In this case we add one to get the true
+        # number of weight bits (pos and neg)
         Wbits = self.params.core.weight_bits
         Nslices = self.params.core.bit_sliced.num_slices
         Wrange_xbar = self.params.xbar.device.Grange_norm
@@ -199,7 +199,8 @@ class BitslicedCore(WrapperCore):
             if self.adc_params.mvm.bits > 0:
                 self.adcs[i].set_limits(W_i)
 
-        # If profiling ADC inputs, initialize data structure here now that matrix dimensions are known
+        # If profiling ADC inputs, initialize data structure here now that
+        # matrix dimensions are known
         # Currently assuming profiling is only done for MVMs
         if self.analytics_params.profile_adc_inputs:
             if self.dac_params.mvm.input_bitslicing:
@@ -213,8 +214,9 @@ class BitslicedCore(WrapperCore):
                 Nout_mvm *= 2
             Nmvms = self.analytics_params.ntest
 
-            # For convolutions, the size of the second dimension will be further scaled on the
-            # first mvm call, when the number of sliding windows per input is known
+            # For convolutions, the size of the second dimension will be further
+            # scaled on the first mvm call, when the number of sliding windows
+            # per input is known
             self.adc_inputs = xp.zeros(
                 (Nslices, magbits, Nmvms * Nout_mvm),
                 dtype=xp.float32,
@@ -245,7 +247,8 @@ class BitslicedCore(WrapperCore):
         op = "vmm"
         return self.run_xbar_operation(op, vector)
 
-    def run_xbar_operation(self, op, vector):
+    def run_xbar_operation(self, op, vector):  # noqa:C901
+        """A generalized functino to perform cross bar multiplications."""
         Wbits = self.params.core.weight_bits
         Nslices = self.params.core.bit_sliced.num_slices
         Wbits_slice = self.Wbits_slice
@@ -262,7 +265,8 @@ class BitslicedCore(WrapperCore):
 
         #########
 
-        # Whether positive and negative weights in balanced configuration are subtracted digitally
+        # Whether positive and negative weights in balanced configuration are
+        # subtracted digitally
         digital_posneg = (
             self.balanced
             and not self.subtract_current_in_xbar
@@ -292,7 +296,7 @@ class BitslicedCore(WrapperCore):
             )
 
         ################################
-        ##  ANALOG INPUT ENCODING
+        # ANALOG INPUT ENCODING
         ################################
         if not dac_params.input_bitslicing:
             for i in range(Nslices):
@@ -367,7 +371,7 @@ class BitslicedCore(WrapperCore):
                         )
 
         ################################
-        ##  INPUT BIT SLICING
+        # INPUT BIT SLICING
         ################################
         else:
             vector_slices = dac.convert_sliced(vector)
@@ -528,7 +532,8 @@ class BitslicedCore(WrapperCore):
                 for i in range(Nslices):
                     output_slices[i] /= Wrange_xbar
             else:
-                # If using digital offset, a Gmin offset has to be subtracted, and the offset is input dependent
+                # If using digital offset, a Gmin offset has to be subtracted,
+                # and the offset is input dependent
                 if (
                     self.params.simulation.convolution.x_par > 1
                     or self.params.simulation.convolution.y_par > 1
@@ -728,6 +733,7 @@ class BitslicedCore(WrapperCore):
         raise ValueError("Not implemented")
 
     def expand_matrix(self, Ncopy):
+        """Expands the matrix to allow for parallel simulation."""
         # Calls expand_matrix in the inner cores
         # Makes multiple copies of matrix to compute multiple MVMs in parallel
         for i in range(self.Nslices):
@@ -753,6 +759,7 @@ class BitslicedCore(WrapperCore):
                         ] = W_i_temp.copy()
 
     def unexpand_matrix(self):
+        """Undoes the expand_matrix operation. Forms a single matrix."""
         # Calls unexpand_matrix in the inner cores
         for i in range(self.Nslices):
             if not self.balanced:

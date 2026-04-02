@@ -1,7 +1,7 @@
 #
-# Copyright 2017 National Technology & Engineering Solutions of Sandia, LLC
-# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government
-# retains certain rights in this software.
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
+# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+# Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
@@ -17,14 +17,15 @@ from .base_parameters import BasePairedParameters, BaseParameters
 class CoreStyle(IntEnum):
     """What style of core to use.
 
-    "BALANCED" : Represent each positive or negative matrix value using the conductance
-     difference of two devices
-    "BITSLICED" : Split the bits of resolution of each matrix value into multiple
-        slices. Each bit slice is represented by a balanced or offset cell
-    "OFFSET" : Represent each positive or negative matrix value using a single device
-        whose conductance is related to the value by an offset, which is later
-        subtracted. Positive weights use conductances above the offset, negative
-        weights are below
+    "BALANCED" : Represent each positive or negative matrix value using the
+        conductance difference of two devices
+    "BITSLICED" : Split the bits of resolution of each matrix value into
+        multiple slices. Each bit slice is represented by a balanced or offset
+        cell
+    "OFFSET" : Represent each positive or negative matrix value using a single
+        device whose conductance is related to the value by an offset, which is
+        later subtracted. Positive weights use conductances above the offset,
+        negative weights are below
     """
 
     BALANCED = 1
@@ -57,12 +58,12 @@ class BitSlicedCoreStyle(IntEnum):
 class OffsetCoreStyle(IntEnum):
     """How the offset to subtract in an OffsetCore or BitSlicedCore is computed.
 
-    "DIGITAL_OFFSET" : Offset is computed digitally and subtracted from digitized
-        MVM output
-    "UNIT_COLUMN_SUBTRACTION" : A unit column (or zero-point column) is allocated
-        inside the memory array. The analog MVM result of this column is the offset.
-        This is digitized and subtracted from the digitized results of all other
-        columns.
+    "DIGITAL_OFFSET" : Offset is computed digitally and subtracted from
+        digitized MVM output
+    "UNIT_COLUMN_SUBTRACTION" : A unit column (or zero-point column) is
+        allocated inside the memory array. The analog MVM result of this column
+        is the offset. This is digitized and subtracted from the digitized
+        results of all other columns.
     """
 
     DIGITAL_OFFSET = 1
@@ -72,7 +73,8 @@ class OffsetCoreStyle(IntEnum):
 class PartitionStrategy(IntEnum):
     """How to split rows/cols across multiple physical arrays.
 
-    "MAX": Use the maximum number of rows/cols in each array, one will be underfilled
+    "MAX": Use the maximum number of rows/cols in each array, one will be
+         underfilled
     "EQUAL": Split rows/cols as equally as possible across all arrays
     """
 
@@ -119,7 +121,8 @@ class CoreParameters(BaseParameters):
         complex_matrix (bool): Whether to use complex valued matrices
         complex_input (bool): Whether inputs are complex valued
         balanced (BalancedCoreParameters): Parameters to use for balanced cores
-        bit_sliced (BitSlicedCoreParameters): Parameters to use for bit sliced cores
+        bit_sliced (BitSlicedCoreParameters): Parameters to use for bit sliced
+            cores
         offset (OffsetCoreParameters): Parameters to use for offset cores
         mapping (CoreMappingParameters): Parameters to use when mapping values
     """
@@ -143,11 +146,12 @@ class BalancedCoreParameters(BaseParameters):
 
     Args:
         style (BalancedCoreStyle): Style of the balanced core
-        interleaved_posneg (bool): Whether devices that implement the positive and
-            negative portions of the weight are interleaved on the same column (for
-            MVM) or row (for VMM). This option only makes a difference if parasitic
-            resistance effects are simulated.
-        subtract_current_in_xbar (bool): Whether to subtract current in the crossbar
+        interleaved_posneg (bool): Whether devices that implement the positive
+            and negative portions of the weight are interleaved on the same
+            column (for MVM) or row (for VMM). This option only makes a
+            difference if parasitic resistance effects are simulated.
+        subtract_current_in_xbar (bool): Whether to subtract current in the
+            crossbar
     """
 
     style: BalancedCoreStyle = BalancedCoreStyle.ONE_SIDED
@@ -197,9 +201,11 @@ class MappingParameters(BaseParameters):
 
     @property
     def range(self):
+        """Range of the mapping."""
         return self.max - self.min
 
     def validate(self) -> None:
+        """Checks the parameters for invalid settings."""
         super().validate()
         if self.percentile is None:
             if self.max is None and self.min is None:
@@ -222,18 +228,18 @@ class WeightMappingParameters(MappingParameters):
     """Parameters for mapping weights specifically.
 
     Attributes:
-        row_partition_priority (list[int]): Ordered list of divisors to check for total
-            row divisibility. For applications where we want to split rows in a
-            specific way
-        col_partition_priority (list[int]): Ordered list of divisors to check for total
-            column divisibility. For applications where we want to split columns in a
-            specific way
-        row_partition_strategy (PartitionStrategy): How to split matrix rows across
-            multiple subarrays. This is used only when no equal divisors are found with
-            row_partition_priority.
-        col_partition_strategy (PartitionStrategy): How to split matrix columns across
-            multiple subarrays. This is used only when no equal divisors are found with
-            col_partition_priority.
+        row_partition_priority (list[int]): Ordered list of divisors to check
+            for total row divisibility. For applications where we want to split
+            rows in a specific way
+        col_partition_priority (list[int]): Ordered list of divisors to check
+            for total column divisibility. For applications where we want to
+            split columns in a specific way
+        row_partition_strategy (PartitionStrategy): How to split matrix rows
+            across multiple subarrays. This is used only when no equal divisors
+            are found with row_partition_priority. col_partition_strategy
+        (PartitionStrategy): How to split matrix columns across multiple
+        subarrays. This is used only when no equal divisors are found with
+        col_partition_priority.
     """
 
     row_partition_priority: list[int] = field(default_factory=list)
@@ -274,6 +280,7 @@ class CoreMappingParameters(BaseParameters):
     inputs: MatmulParameters = None
 
     def __post_init__(self):
+        """Triggers post_init hooks."""
         if self.weights._implicitly_initialized:
             self.weights = WeightMappingParameters(
                 clipping=True,
