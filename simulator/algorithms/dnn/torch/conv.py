@@ -1,5 +1,5 @@
 #
-# Copyright 2024 National Technology & Engineering Solutions of Sandia, LLC
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
 # (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
 # Government retains certain rights in this software.
 #
@@ -8,8 +8,8 @@
 
 """CrossSim version of N-dimensional torch.nn.Conv[N]d layers.
 
-AnalogConv[N] provides a CrossSim-based forward and backward using Analog MVM backed by
-AnalogConvolution.
+AnalogConv[N] provides a CrossSim-based forward and backward using Analog MVM
+backed by AnalogConvolution.
 """
 
 from __future__ import annotations
@@ -71,9 +71,10 @@ class _AnalogConvNd(_ConvNd, AnalogLayer):
 
         Args:
             params:
-                CrossSimParameters object or list of CrossSimParameters (for layers
-                requiring multiple arrays) for the AnalogLinear layer. If a list, the
-                length must match the number of arrays used within AnalogCore.
+                CrossSimParameters object or list of CrossSimParameters (for
+                layers requiring multiple arrays) for the AnalogRNNCell layer.
+                If a list, the length must match the number of arrays used
+                within AnalogCore.
             in_channels: See torch.nn.Conv[N]d in_channels argument.
             out_channels: See See torch.nn.Conv[N]d out_channels argument.
             kernel_size: See torch.nn.Conv[N]d kernel_size argument.
@@ -86,13 +87,17 @@ class _AnalogConvNd(_ConvNd, AnalogLayer):
             device: See torch.nn.Conv[N]d device argument.
             dtype: See torch.nn.Conv[N]d dtype argument.
             bias_rows:
-                Integer indicating the number of rows to use to implement the bias
-                within the array. 0 implies a digital bias. Ignored if bias is false.
+                Integer indicating the number of rows to use to implement the
+                bias within the array. 0 implies a digital bias. Ignored if bias
+                is false.
         """
         device_ = AnalogLayer._set_device(
             device,
             params[0] if isinstance(params, list) else params,
         )
+
+        self._array_weight_variables = ["weight"]
+        self._array_bias_variables = ["bias"]
 
         super().__init__(
             in_channels,
@@ -199,13 +204,9 @@ class _AnalogConvNd(_ConvNd, AnalogLayer):
         Alternatively,  reinitialize can be used to directly resample
         initialization-time errors.
         """
-        # If we're being called and there is no core (called during init),
-        # just bail out, init will handle it.
-        if not hasattr(self, "core"):
-            return
+        self._initialized = False
 
         # Since bias_rows can change we need to recompute analog_bias
-
         self.analog_bias = self.bias is not None and self.bias_rows > 0
 
         # Shape might have changed need to call form_matrix again.
@@ -230,18 +231,20 @@ class _AnalogConvNd(_ConvNd, AnalogLayer):
     ) -> _AnalogConvNd:
         """Build AnalogConv[N]d from a Conv[N]d layer.
 
-        Creates a new AnalogConv[N]d layer with the same attributes as the original
-        torch layer.
+        Creates a new AnalogConv[N]d layer with the same attributes as the
+        original torch layer.
 
         Args:
             layer: torch.nn.Conv[N]d layer to copy.
             params:
-                CrossSimParameters object or list of CrossSimParameters (for layers
-                requiring multiple arrays) for the AnalogConv[N]d layer. If a list, the
-                length must match the number of arrays used within AnalogCore.
+                CrossSimParameters object or list of CrossSimParameters (for
+                layers requiring multiple arrays) for the AnalogRNNCell layer.
+                If a list, the length must match the number of arrays used
+                within AnalogCore.
             bias_rows:
-                Integer indicating the number of analog rows to use for the bias.
-                0 indicates a digital bias. Ignored if layer does not have a bias.
+                Integer indicating the number of analog rows to use for the
+                bias. 0 indicates a digital bias. Ignored if layer does not have
+                a bias.
 
         Returns:
             AnalogConv[N]d layer with the same weights and properties as input
@@ -263,9 +266,9 @@ class _AnalogConvNd(_ConvNd, AnalogLayer):
             layer.groups,
             layer.bias is not None,
             layer.padding_mode,
-            # Adopt the convention that device and dtype are based on the device and
-            # dtype of the weight matrix for conversion. Technically misses some
-            # possible (but extremely silly) use cases.
+            # Adopt the convention that device and dtype are based on the device
+            # and dtype of the weight matrix for conversion. Technically misses
+            # some possible (but extremely silly) use cases.
             device,
             layer.weight.dtype,
             bias_rows,
@@ -288,19 +291,20 @@ class _AnalogConvNd(_ConvNd, AnalogLayer):
         Args:
             layer: AnalogConv[N]d layer to copy.
             physical_weights:
-                Bool indicating whether the torch layer should have ideal weights or
-                weights with programming error applied.
+                Bool indicating whether the torch layer should have ideal
+                weights or weights with programming error applied.
             device:
                 The device where the layer will be placed. See torch.device for
-                additional documentation. If None, the device will be set based on the
-                layer's CrossSimParameters object.
+                additional documentation. If None, the device will be set based
+                on the layer's CrossSimParameters object.
             dtype:
                 The dtype of the layer weights. See torch.dtype for additional
-                documentation. If None dtype will be set based on AnalogCore.dtype.
+                documentation. If None dtype will be set based on
+                AnalogCore.dtype.
 
         Returns:
-            torch.nn.Linear with the same properties and weights (potentially with
-            errors) as the AnalogConv[N]d layer.
+            torch.nn.Linear with the same properties and weights (potentially
+            with errors) as the AnalogConv[N]d layer.
         """
         if not device:
             if layer.params.simulation.useGPU:
@@ -372,9 +376,10 @@ class AnalogConv1d(_AnalogConvNd, Conv1d):
 
         Args:
             params:
-                CrossSimParameters object or list of CrossSimParameters (for layers
-                requiring multiple arrays) for the AnalogLinear layer. If a list, the
-                length must match the number of arrays used within AnalogCore.
+                CrossSimParameters object or list of CrossSimParameters (for
+                layers requiring multiple arrays) for the AnalogRNNCell layer.
+                If a list, the length must match the number of arrays used
+                within AnalogCore.
             in_channels: See torch.nn.Conv1d in_channels argument.
             out_channels: See See torch.nn.Conv1d out_channels argument.
             kernel_size: See torch.nn.Conv1d kernel_size argument.
@@ -387,8 +392,9 @@ class AnalogConv1d(_AnalogConvNd, Conv1d):
             device: See torch.nn.Conv3d device argument.
             dtype: See torch.nn.Conv3d dtype argument.
             bias_rows:
-                Integer indicating the number of rows to use to implement the bias
-                within the array. 0 implies a digital bias. Ignored if bias is false.
+                Integer indicating the number of rows to use to implement the
+                bias within the array. 0 implies a digital bias. Ignored if bias
+                is false.
         """
         self.core_func = AnalogConvolution1D
         # Rank-entry tuple of zeros for use in forward for padding
@@ -441,9 +447,10 @@ class AnalogConv2d(_AnalogConvNd, Conv2d):
 
         Args:
             params:
-                CrossSimParameters object or list of CrossSimParameters (for layers
-                requiring multiple arrays) for the AnalogLinear layer. If a list, the
-                length must match the number of arrays used within AnalogCore.
+                CrossSimParameters object or list of CrossSimParameters (for
+                layers requiring multiple arrays) for the AnalogRNNCell layer.
+                If a list, the length must match the number of arrays used
+                within AnalogCore.
             in_channels: See torch.nn.Conv2d in_channels argument.
             out_channels: See See torch.nn.Conv2d out_channels argument.
             kernel_size: See torch.nn.Conv2d kernel_size argument.
@@ -456,8 +463,9 @@ class AnalogConv2d(_AnalogConvNd, Conv2d):
             device: See torch.nn.Conv2d device argument.
             dtype: See torch.nn.Conv2d dtype argument.
             bias_rows:
-                Integer indicating the number of rows to use to implement the bias
-                within the array. 0 implies a digital bias. Ignored if bias is false.
+                Integer indicating the number of rows to use to implement the
+                bias within the array. 0 implies a digital bias. Ignored if bias
+                is false.
         """
         self.core_func = AnalogConvolution2D
         # Rank-entry tuple of zeros for use in forward for padding
@@ -510,9 +518,10 @@ class AnalogConv3d(_AnalogConvNd, Conv3d):
 
         Args:
             params:
-                CrossSimParameters object or list of CrossSimParameters (for layers
-                requiring multiple arrays) for the AnalogLinear layer. If a list, the
-                length must match the number of arrays used within AnalogCore.
+                CrossSimParameters object or list of CrossSimParameters (for
+                layers requiring multiple arrays) for the AnalogRNNCell layer.
+                If a list, the length must match the number of arrays used
+                within AnalogCore.
             in_channels: See torch.nn.Conv3d in_channels argument.
             out_channels: See See torch.nn.Conv3d out_channels argument.
             kernel_size: See torch.nn.Conv3d kernel_size argument.
@@ -525,8 +534,9 @@ class AnalogConv3d(_AnalogConvNd, Conv3d):
             device: See torch.nn.Conv3d device argument.
             dtype: See torch.nn.Conv3d dtype argument.
             bias_rows:
-                Integer indicating the number of rows to use to implement the bias
-                within the array. 0 implies a digital bias. Ignored if bias is false.
+                Integer indicating the number of rows to use to implement the
+                bias within the array. 0 implies a digital bias. Ignored if bias
+                is false.
         """
         self.core_func = AnalogConvolution3D
         # Rank-entry tuple of zeros for use in forward for padding

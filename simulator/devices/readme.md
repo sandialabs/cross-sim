@@ -4,10 +4,24 @@ This directory contains models for the resistive memory device used to compute t
 
 Device models are implemented as classes that inherit from the ``IDevice`` class. The ``IDevice`` class natively implements the quantization of the conductance levels that can be targeted for programming. The resolution is set by the parameter ``params.xbar.device.cell_bits``.
 
-Devices can also implement models for programming error, conductance drift, and read noise.
-- Programming error is specified by the ``programming_error`` function which can be user-defined. This function takes the target conductance matrix (after quantization) as input and returns a conductance matrix with programming errors applied. Errors can be have a combination of random and deterministic components and can be state-dependent. These errors are permanently applied to the arrays that are stored in a core, until a new matrix is programmed or the core is destroyed.
-- Conductance drift is specified by the ``drift_error`` function which can be user-defined. This function is similar to programming error, but also takes a time variable (``device_params.time``) as parameter, which should be interpreted as the time elapsed after programming. If time is non-zero, the drift model is applied and programming error is ignored. This is based on the assumption that measurements of conductance taken some time after programming take into account both the initial programming errors and the subsequent drift. In the current CrossSim version, time is fixed during a full simulation. In a future update, we will add the ability to evolve time during a simulation and accumulate errors over time.
-- Read noise is specified by the ``read_noise`` function which can be user-defined. The function takes as input the conductance matrix with programming or drift errors applied, and returns a conductance matrix with read noise added. The read noise is re-applied each time an MVM/VMM is called on a core, and the conductance change due to noise is not persistent. This simulates white noise with no temporal correlations. The properties of noise can be state-dependent.
+Devices can also implement models for programming error, conductance drift, read noise, and I-V nonlinearity.
+
+#### Programming error
+Programming error is specified by the ``programming_error`` function which can be user-defined. This function takes the target conductance matrix (after quantization) as input and returns a conductance matrix with programming errors applied. Errors can be have a combination of random and deterministic components and can be state-dependent. These errors are permanently applied to the arrays that are stored in a core, until a new matrix is programmed or the core is destroyed.
+
+#### Conductance drift
+Conductance drift is specified by the ``drift_error`` function which can be user-defined. This function is similar to programming error, but also takes a time variable (``device_params.time``) as parameter, which should be interpreted as the time elapsed after programming. If time is non-zero, the drift model is applied and programming error is ignored. This is based on the assumption that measurements of conductance taken some time after programming take into account both the initial programming errors and the subsequent drift. In the current CrossSim version, time is fixed during a full simulation. In a future update, we will add the ability to evolve time during a simulation and accumulate errors over time.
+
+#### Read noise
+Read noise is specified by the ``read_noise`` function which can be user-defined. The function takes as input the conductance matrix with programming or drift errors applied, and returns a conductance matrix with read noise added. The read noise is re-applied each time an MVM/VMM is called on a core, and the conductance change due to noise is not persistent. This simulates white noise with no temporal correlations. The properties of noise can be state-dependent.
+
+#### I-V nonlinearity
+I-V nonlinearity is specified by two functions: ``nonlinear_current`` and ``nonlinear_current_sum``. These two functions model the same effect, and only one of the two will be used, based on the parameter ``params.simulation.fast_nonlinear_IV``. It is not necessary to implement both functions to model I-V nonlinearity, but it is recommended to at least implement ``nonlinear_current``. The I-V nonlinearity model is fully user-specified: any arbitrary shape of the I-V curve can be modeled and the I-V curve can be state-dependent. If I-V nonlinearity is enabled, the nonlinear current function will be called every time an MVM or VMM is called on a core (like ``read_noise``). If both functions are implemented, the user should ensure that they are physically consistent.
+
+``nonlinear_current`` takes as input a matrix of conductances and a matrix of applied voltages _at every cell of the array_, both in normalized units. The function returns the current at every cell of the array. This function is used when `params.simulation.fast_nonlinear_IV = False`. It is important to note that since we are modeling nonlinear I-V, the conductance is mainly used to distinguish the memory states of a device: it is not necessarily the conductance of the device at the applied voltage. The exact meaning of the conductance is up to the user: it depends on how the nonlinear I-V model is implemented. For example, in the I-V nonlinearity model for the ``RRAMMilo`` device, the conductance refers to the conductance of the device at zero applied voltage.
+
+``nonlinear_current_sum`` takes as input a matrix of conductances and vector (or matrix) of applied voltages _to the terminals of the array_, both in normalized units. This function is used when ``params.simulation.fast_nonlinear_IV = True``. This function returns the _summed currents_ in every summation line of the array. It simulates the analog MVM or VMM without requiring the currents in all the individual cells to be stored, which saves time and memory. This function can be used when all the cells that share the same input also have the same applied voltage, which is true only when there are zero parasitic IR drops.
+
 
 ### Selecting a device model
 
@@ -16,6 +30,7 @@ A device class can implement a model for any, all, or none of the error properti
 params.xbar.device.read_noise.model = "IdealDevice"
 params.xbar.device.programming_error.model = "NormalProportionalDevice"
 params.xbar.device.drift_error.model = "SONOS"
+params.xbar.device.nonlinear_IV.model = "RRAMMilo"
 ```
 Each model above also has a ``enable`` parameter which if ``False``, is the same as setting the model to ``IdealDevice``.
 

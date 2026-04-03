@@ -1,5 +1,5 @@
 #
-# Copyright 2024 National Technology & Engineering Solutions of Sandia, LLC
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
 # (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
 # Government retains certain rights in this software.
 #
@@ -15,6 +15,12 @@ from torch.nn import (
     Conv1d,
     Conv2d,
     Conv3d,
+    RNNCell,
+    LSTMCell,
+    GRUCell,
+    RNN,
+    LSTM,
+    GRU,
     Identity,
     Sequential,
 )
@@ -29,6 +35,12 @@ from warnings import warn
 
 from simulator.algorithms.dnn.torch.conv import AnalogConv1d, AnalogConv2d, AnalogConv3d
 from simulator.algorithms.dnn.torch.linear import AnalogLinear
+from simulator.algorithms.dnn.torch.lstm_cell import AnalogLSTMCell
+from simulator.algorithms.dnn.torch.lstm import AnalogLSTM
+from simulator.algorithms.dnn.torch.rnn_cell import AnalogRNNCell
+from simulator.algorithms.dnn.torch.rnn import AnalogRNN
+from simulator.algorithms.dnn.torch.gru_cell import AnalogGRUCell
+from simulator.algorithms.dnn.torch.gru import AnalogGRU
 
 from typing import Callable
 
@@ -37,7 +49,15 @@ _conversion_map = {
     Conv1d: AnalogConv1d,
     Conv2d: AnalogConv2d,
     Conv3d: AnalogConv3d,
+    LSTMCell: AnalogLSTMCell,
+    LSTM: AnalogLSTM,
+    RNNCell: AnalogRNNCell,
+    RNN: AnalogRNN,
+    GRUCell: AnalogGRUCell,
+    GRU: AnalogGRU,
 }
+
+_dual_bias_layers = {RNNCell, RNN, LSTMCell, LSTM, GRUCell, GRU}
 
 CrossSimParameterList = list[CrossSimParameters]
 
@@ -86,6 +106,10 @@ def from_torch(
     # if the model is actually convertible
 
     if type(model) in _conversion_map:
+        if type(model) in _dual_bias_layers:
+            return _conversion_map[type(model)].from_torch(
+                model, params, bias_rows, bias_rows
+            )
         return _conversion_map[type(model)].from_torch(model, params, bias_rows)
 
     # Enumerate the convertible layers for error checking
@@ -234,7 +258,7 @@ def inconvertible_modules(model: Module) -> list[Module]:
 
 
 def synchronize(model: Module) -> None:
-    """Synchronize layer.weight with the analog weight for all model in the module.
+    """Synchronize layer.weight with analog weights for all model in the module.
 
     Synchronize is used for CrossSim-in-the-loop training to update model
     weights after an optimizer uses an in-place update. This should called
@@ -250,9 +274,9 @@ def synchronize(model: Module) -> None:
 def reinitialize(model: Module) -> None:
     """Call reinitialize on all analog layers in the module.
 
-    This function is primarily used to re-sample random conductance errors as updating
-    the params object of an analog layer will reinitialize that layer with the new
-    params.
+    This function is primarily used to re-sample random conductance errors as
+    updating the params object of an analog layer will reinitialize that layer
+    with the new params.
 
     Args:
         model: Torch module to reinitialize.
@@ -280,11 +304,20 @@ def _convert_children_from_torch(
             else:
                 bias_rows_ = bias_rows.pop()
 
-            setattr(
-                module,
-                name,
-                _conversion_map[type(child)].from_torch(child, params_, bias_rows_),
-            )
+            if type(child) in _dual_bias_layers:
+                setattr(
+                    module,
+                    name,
+                    _conversion_map[type(child)].from_torch(
+                        child, params_, bias_rows_, bias_rows_
+                    ),
+                )
+            else:
+                setattr(
+                    module,
+                    name,
+                    _conversion_map[type(child)].from_torch(child, params_, bias_rows_),
+                )
 
         # Then recursively descend
         _convert_children_from_torch(child, params, bias_rows)

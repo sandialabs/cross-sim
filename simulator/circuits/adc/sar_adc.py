@@ -1,6 +1,7 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
+# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+# Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
@@ -13,25 +14,33 @@ xp = ComputeBackend()
 
 
 class SarADC(IADC):
-    """This class implements the Successive Approximation Register (SAR) ADC model described in:
-    M. Spear et al, "The Impact of Analog-to-Digital Converter Architecture and Variability on Analog Neural Network Accuracy"
-    IEEE Journal on Exploratory Solid-State Computational Devices and Circuits (accepted), 2023.
+    """This class implements the Successive Approximation Register (SAR) ADC
+    model described in:
+    M. Spear et al, "The Impact of Analog-to-Digital Converter Architecture and
+    Variability on Analog Neural Network Accuracy" IEEE Journal on Exploratory
+    Solid-State Computational Devices and Circuits (accepted), 2023.
 
-    The SAR ADC compares analog outputs against a capacitive DAC (CDAC) using a comparator. The number of CDAC queries is
-    the # ADC bits, by using a binary search algorithm.
-    The capacitance CDAC outputs can have error due to random capacitance mismatch. The comparator can have random offset.
-    There is also error introduced by finite gain in the op amp at the output of the CDAC.
+    The SAR ADC compares analog outputs against a capacitive DAC (CDAC) using a
+    comparator. The number of CDAC queries is the # ADC bits, by using a binary
+    search algorithm. The capacitance CDAC outputs can have error due to random
+    capacitance mismatch. The comparator can have random offset. There is also
+    error introduced by finite gain in the op amp at the output of the CDAC.
 
-    The CDAC can have a split or non-split implementation which have different error sensitivities. See Section II of the paper
-    for details and a discussion of design trade-offs.
+    The CDAC can have a split or non-split implementation which have different
+    error sensitivities. See Section II of the paper for details and a
+    discussion of design trade-offs.
 
-    We assume that a single CDAC is shared by multiple columns, defined by the parameter group_size
-    The columns of an array are then partitioned into groups using group_size. Different groups use different CDACs with
-    independent random errors. Columns within the same group are affected by the same random errors in the CDAC and comparator.
+    We assume that a single CDAC is shared by multiple columns, defined by the
+    parameter group_size The columns of an array are then partitioned into
+    groups using group_size. Different groups use different CDACs with
+    independent random errors. Columns within the same group are affected by the
+    same random errors in the CDAC and comparator.
+
     """
 
     # Initialize SAR ADC
     def set_limits(self, matrix):
+        """Initialize the non-idealities for the SAR ADC."""
         super().set_limits(matrix)
 
         # SAR ADC parameters
@@ -70,7 +79,7 @@ class SarADC(IADC):
         )
 
         if not split_cdac:
-            #### Standard non-split DAC
+            # Standard non-split DAC
 
             # Utility constants and conditions based on DAC level
             X1 = 2 ** (self.bits - 1) - counts
@@ -78,12 +87,12 @@ class SarADC(IADC):
             cond2 = xp.logical_not(cond1)
 
             for rd in range(num_adcs):
-                # Account for the fact that capacitance mismatch scales with the square root of capacitor size
-                # in a typical foundry process
+                # Account for the fact that capacitance mismatch scales with the
+                # square root of capacitor size in a typical foundry process
                 cap_errors = xp.zeros(self.bits + 1)
-                cap_errors[: self.bits] = 2**bits_vec + cap_mismatches[
-                    : self.bits
-                ] * (2 ** (bits_vec / 2))
+                cap_errors[: self.bits] = 2**bits_vec + cap_mismatches[: self.bits] * (
+                    2 ** (bits_vec / 2)
+                )
                 cap_errors[self.bits] = 2 ** (self.bits - 1) + cap_mismatches[
                     self.bits
                 ] * (2 ** ((self.bits - 1) / 2))
@@ -106,7 +115,7 @@ class SarADC(IADC):
                 dac_levels_all[rd, :] = dac_levels / (1 + 1 / (gain * beta))
 
         else:
-            #### Split DAC
+            # Split DAC
 
             # Utility constants
             NH = int(xp.floor(self.bits / 2))
@@ -123,7 +132,8 @@ class SarADC(IADC):
             cond2 = xp.logical_and(cond2, xp.logical_not(cond0))
 
             for rd in range(num_adcs):
-                # Account for typical foundry variation and the split DAC attenuation factor
+                # Account for typical foundry variation and the split DAC
+                # attenuation factor
                 cap_errors = xp.zeros(self.bits + 1)
                 for n in range(self.bits - 1):
                     if n < xp.floor(self.bits / 2):
@@ -211,6 +221,7 @@ class SarADC(IADC):
 
     # Run-time method to simulate SAR ADC
     def convert(self, vector):
+        """Perform an ADC conversion with a SAR ADC."""
         if self.bits is None or self.bits == 0:
             return vector
 
@@ -223,7 +234,7 @@ class SarADC(IADC):
         # Container for SAR register values
         dig_reg = xp.zeros(input_.shape, dtype=int)
 
-        ### MVM
+        # MVM
         if len(input_.shape) == 1:
             for i in range(self.bits):
                 dig_comp = 2 ** (self.bits - i - 1)
@@ -231,7 +242,7 @@ class SarADC(IADC):
                 bi = input_ > (Vdac - self.comparator_offsets)
                 dig_reg += 2 ** (self.bits - i - 1) * bi
 
-        ### Matmul
+        # Matmul
         else:
             for i in range(self.bits):
                 dig_comp = 2 ** (self.bits - i - 1)

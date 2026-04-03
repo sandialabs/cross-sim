@@ -1,18 +1,22 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
+# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+# Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
 
 import numpy as np
-from ...cores.analog_core import AnalogCore
+from simulator import AnalogCore
 from scipy.linalg import dft
 
 
 class DFT:
-    """Implements a crossbar that performs a Discrete Fourier Transform using direct MVM/VMM
-    This is a simple example of a class that is built on top of the MVM interface.
+    """Implements a crossbar that performs a Discrete Fourier Transform.
+
+    This class uses using direct MVM/VMM rather than any FFT-inspired
+    compuration. This is a simple example of a class that is built on top of the
+     MVM interface.
 
     N_ft        : length of Fourier transform
     params      : parameters of simulated analog core
@@ -22,6 +26,7 @@ class DFT:
     """
 
     def __init__(self, N_ft, params=None, normalize=False, inverse=False):
+        """Initializes an Analog DFT Object."""
         # Set the params of the DFT core
         if params is None:
             raise ValueError(
@@ -49,7 +54,8 @@ class DFT:
         # These parameter are strictly to be accessed by dnn.py
         self.core = AnalogCore(dft_mat, params)
 
-        # Map wrapper cores of AnalogCore to this core so that this object can be treated like an AnalogCore
+        # Map wrapper cores of AnalogCore to this core so that this object can
+        # be treated like an AnalogCore
         self.N_ft = N_ft
         self.Ncores = self.core.Ncores
         self.cores = self.core.cores

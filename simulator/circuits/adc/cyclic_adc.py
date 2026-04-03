@@ -1,6 +1,7 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
+# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+# Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
@@ -13,19 +14,20 @@ xp = ComputeBackend()
 
 class CyclicADC(IADC):
     """This class implements the Cyclic ADC model described in:
-    M. Spear et al, "The Impact of Analog-to-Digital Converter Architecture and Variability on Analog Neural Network Accuracy"
-    IEEE Journal on Exploratory Solid-State Computational Devices and Circuits (accepted), 2023.
+    M. Spear et al, "The Impact of Analog-to-Digital Converter Architecture and
+    Variability on Analog Neural Network Accuracy" IEEE Journal on Exploratory
+    Solid-State Computational Devices and Circuits (accepted), 2023.
 
-    The cyclic ADC operates in the same way as the pipeline ADC, except that instead of having (N-1) 1.5-bit
-    stages, a single 1.5-bit stage is re-used cyclically across all the bits. This means the ADC cannot be
-    pipelined.
+    The cyclic ADC operates in the same way as the pipeline ADC, except that
+    instead of having (N-1) 1.5-bit stages, a single 1.5-bit stage is re-used
+    cyclically across all the bits. This means the ADC cannot be pipelined.
 
     This ADC uses the same set of parameters as the pipeline ADC
-
     """
 
     # Initialize Cyclic ADC
     def set_limits(self, matrix):
+        """Initializes the non-idealities for a Cyclic ADC."""
         super().set_limits(matrix)
 
         # Cyclic ADC parameters
@@ -90,17 +92,19 @@ class CyclicADC(IADC):
 
     # Run-time method to simulate cyclic ADC
     def convert(self, vector):
+        """Perform an ADC conversion with a Cyclic ADC."""
         if self.bits is None or self.bits == 0:
             return vector
 
         # Clip vector
         input_ = vector.clip(self.min, self.max)
 
-        # The loop below implements the cyclic ADC bit-by-bit sequential conversion
-        # Iterate through the bits, but operate on all ADC inputs in parallel
+        # The loop below implements the cyclic ADC bit-by-bit sequential
+        # conversion .Iterate through the bits, but operate on all ADC inputs
+        # in parallel
         Vx = input_.copy()
 
-        ### MVM
+        # MVM
         if len(input_.shape) == 1:
             b = xp.zeros((self.bits, self.bits, len(input_)))
             for n in range(self.bits):
@@ -125,7 +129,7 @@ class CyclicADC(IADC):
             for n in range(self.bits):
                 codeint += (2**n) * code[self.bits - n - 1, :]
 
-        ### Matmul
+        # Matmul
         else:
             b = xp.zeros((self.bits, self.bits, input_.shape[0], input_.shape[1]))
 

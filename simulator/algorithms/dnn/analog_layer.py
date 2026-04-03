@@ -1,5 +1,5 @@
 #
-# Copyright 2024 National Technology & Engineering Solutions of Sandia, LLC
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
 # (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
 # Government retains certain rights in this software.
 #
@@ -8,8 +8,8 @@
 
 """Base class for CrossSim layer implementations.
 
-AnalogLayer provides basic infrastructure that is used by common layer implementations
-for both PyTorch and Keras.
+AnalogLayer provides basic infrastructure that is used by common layer
+implementations for both PyTorch and Keras.
 """
 
 from __future__ import annotations
@@ -24,8 +24,8 @@ class AnalogLayer(ABC):
     """Base class for CrossSim layer implementations.
 
     AnalogLayer is the base class for CrossSim layer implementations. The layer
-    implementations internally contain an AnalogCore object and logic to form a 2D
-    matrix and input driver to implement the layer functionality.
+    implementations internally contain an AnalogCore object and logic to form a
+    2D matrix and input driver to implement the layer functionality.
     Implementing class constructors should follow the the following pattern:
     `AnalogLinear(CrossSimParameters, *base layer arg, **analog specific args)`
 
@@ -33,8 +33,8 @@ class AnalogLayer(ABC):
         core: An AnalogCore object which will implement the layer functionality.
         params:
             CrossSimParameters object or list of CrossSimParameters (for layers
-            requiring multiple arrays) for the layer. If a list, the length must match
-            the number of arrays used within AnalogCore.
+            requiring multiple arrays) for the layer. If a list, the length must
+            match the number of arrays used within AnalogCore.
         weight_mask:
             A (slice, slice) tuple indicating which elements of the analog
             array store the weights of the matrix.
@@ -52,16 +52,19 @@ class AnalogLayer(ABC):
     @abstractmethod
     def form_matrix(
         self,
-        weight: npt.ArrayLike,
-        bias: npt.ArrayLike | None = None,
+        weights: npt.ArrayLike,
+        biases: npt.ArrayLike | None = None,
     ) -> npt.NDArray:
         """Builds 2D weight matrix for programming into the array.
 
         Args:
-            weight: Numpy ndarray (or similar) of the layer weights
-            bias:
-                Numpy ndarray (or similar) of the layer bias. Can be None if the layer
-                has no bias or an analog_bias is not used by the layer.
+            weights:
+                Numpy ndarrays (or similar) of the layer weights. Implementing
+                functions can accept multiple weight Tensors.
+            biases:
+                Numpy ndarray (or similar) of the layer bias. Can be None if the
+                layer has no bias or an analog_bias is not used by the layer.
+                Implementing functions can accept multiple weight matrices.
 
         Returns:
             2D numpy ndarray of the matrix.
@@ -69,12 +72,12 @@ class AnalogLayer(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def get_core_weights(self) -> tuple[npt.NDArray, npt.NDArray | None]:
+    def get_core_weights(self) -> tuple[npt.NDArray | None, ...]:
         """Gets the weight and bias matrices with errors applied.
 
-        This function only returns weight and bias values which can be derived from
-        the stored array values. If the layer uses a digital bias the returned bias
-        will be None.
+        This function only returns weight and bias values which can be derived
+        from the stored array values. If the layer uses a digital bias the
+        returned bias will be None.
 
         Returns:
             Tuple of numpy arrays, 2D for weights, 1D or None for bias.
@@ -82,17 +85,18 @@ class AnalogLayer(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def apply(self, M_input: npt.ArrayLike) -> npt.NDArray:
+    def apply(self, *M_inputs: npt.ArrayLike) -> npt.NDArray:
         """Runs the layer forward operation.
 
         Args:
-            M_input:
-                Numpy ndarray (or similar) of the layer input. Shape and order of input
-                dimensions should follow the PyTorch ordering
+            *M_inputs:
+                Numpy ndarrays (or similar) of the layer input. Shape and order
+                of input dimensions should follow the PyTorch ordering.
+                Implementing methods can accept multiple inputs
 
         Returns:
-            Numpy ndarray result of the layer operation. Should follow PyTorch shape
-            and dimension.
+            Numpy ndarray result of the layer operation. Should follow PyTorch
+            shape and dimension.
         """
         raise NotImplementedError
 
@@ -136,11 +140,17 @@ class AnalogLayer(ABC):
         return self.core.min
 
     @property
+    def absmax(self):
+        """Absmax of internal AnalogCore."""
+        return max(self.max, self.min)
+
+    @property
     def shape(self):
         """Shape of 2D Matrix representing the layer.
 
-        Shape represents the original matrix shape (from form_matrix) and does not
-        include any matrix transformations performed with AnalogCore or subcores.
+        Shape represents the original matrix shape (from form_matrix) and does
+        not include any matrix transformations performed with AnalogCore or
+        subcores.
         """
         return self.core.shape
 
@@ -172,6 +182,7 @@ class AnalogLayer(ABC):
     def __setitem__(self, key, value):
         """Forward setitem on the layer to the internal AnalogCore.
 
-        Used primarily for PyTorch layer synchronization by setting values with masks.
+        Used primarily for PyTorch layer synchronization by setting values with
+        masks.
         """
         self.core.__setitem__(key, value)

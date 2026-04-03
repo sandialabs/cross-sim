@@ -1,5 +1,5 @@
 #
-# Copyright 2024 National Technology & Engineering Solutions of Sandia, LLC
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
 # (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
 # Government retains certain rights in this software.
 #
@@ -45,22 +45,27 @@ class AnalogLinear(Linear, AnalogLayer):
 
         Args:
             params:
-                CrossSimParameters object or list of CrossSimParameters (for layers
-                requiring multiple arrays) for the AnalogLinear layer. If a list, the
-                length must match the number of arrays used within AnalogCore.
+                CrossSimParameters object or list of CrossSimParameters (for
+                layers requiring multiple arrays) for the AnalogRNNCell layer.
+                If a list, the length must match the number of arrays used
+                within AnalogCore.
             in_features: See torch.nn.Linear in_features argument.
             out_features: See torch.nn.Linear out_features argument.
             bias: See torch.nn.Linear bias argument.
             device: See torch.nn.Linear device argument.
             dtype: See torch.nn.Linear dtype argument.
             bias_rows:
-                Integer indicating the number of rows to use to implement the bias
-                within the array. 0 implies a digital bias. Ignored if bias is false.
+                Integer indicating the number of rows to use to implement the
+                bias within the array. 0 implies a digital bias. Ignored if bias
+                is false.
         """
         device_ = AnalogLayer._set_device(
             device,
             params[0] if isinstance(params, list) else params,
         )
+
+        self._array_weight_variables = ["weight"]
+        self._array_bias_variables = ["bias"]
 
         super().__init__(in_features, out_features, bias, device_, dtype)
 
@@ -114,10 +119,7 @@ class AnalogLinear(Linear, AnalogLayer):
         Alternatively,  reinitialize can be used to directly resample
         initialization-time errors.
         """
-        # If we're being called and there is no core (called during init),
-        # just bail out, init will handle it.
-        if not hasattr(self, "core"):
-            return
+        self._initialized = False
 
         # Since bias_rows can change we need to recompute analog_bias
         # Also means we can't just the matrix from the old core, need to call
@@ -140,18 +142,20 @@ class AnalogLinear(Linear, AnalogLayer):
     ) -> AnalogLinear:
         """Build AnalogLinear from a Linear layer.
 
-        Creates a new AnalogLinear layer with the same attributes as the original torch
-        layer.
+        Creates a new AnalogLinear layer with the same attributes as the
+        original torch layer.
 
         Args:
             layer: torch.nn.Linear layer to copy.
             params:
-                CrossSimParameters object or list of CrossSimParameters (for layers
-                requiring multiple arrays) for the AnalogLinear layer. If a list, the
-                length must match the number of arrays used within AnalogCore.
+                CrossSimParameters object or list of CrossSimParameters (for
+                layers requiring multiple arrays) for the AnalogLinear layer. If
+                a list, the length must match the number of arrays used within
+                AnalogCore.
             bias_rows:
-                Integer indicating the number of analog rows to use for the bias.
-                0 indicates a digital bias. Ignored if layer does not have a bias.
+                Integer indicating the number of analog rows to use for the
+                bias. 0 indicates a digital bias. Ignored if layer does not have
+                a bias.
 
         Returns:
             AnalogLinear layer with the same weights and properties as input
@@ -170,9 +174,9 @@ class AnalogLinear(Linear, AnalogLayer):
             layer.in_features,
             layer.out_features,
             layer.bias is not None,
-            # Adopt the convention that device and dtype are based on the device and
-            # dtype of the weight matrix for conversion. Technically misses some
-            # possible (but extremely silly) use cases.
+            # Adopt the convention that device and dtype are based on the device
+            # and dtype of the weight matrix for conversion. Technically misses
+            # some possible (but extremely silly) use cases.
             device,
             layer.weight.dtype,
             bias_rows,
@@ -195,19 +199,20 @@ class AnalogLinear(Linear, AnalogLayer):
         Args:
             layer: AnalogLinear layer to copy.
             physical_weights:
-                Bool indicating whether the torch layer should have ideal weights or
-                weights with programming error applied.
+                Bool indicating whether the torch layer should have ideal
+                weights or weights with programming error applied.
             device:
                 The device where the layer will be placed. See torch.device for
-                additional documentation. If None, the device will be set based on the
-                layer's CrossSimParameters object.
+                additional documentation. If None, the device will be set based
+                on the layer's CrossSimParameters object.
             dtype:
                 The dtype of the layer weights. See torch.dtype for additional
-                documentation. If None dtype will be set based on AnalogCore.dtype.
+                documentation. If None dtype will be set based on
+                AnalogCore.dtype.
 
         Returns:
-            torch.nn.Linear with the same properties and weights (potentially with
-            errors) as the AnalogLinear layer.
+            torch.nn.Linear with the same properties and weights (potentially
+            with errors) as the AnalogLinear layer.
         """
         if not device:
             if layer.params.simulation.useGPU:

@@ -1,5 +1,5 @@
 #
-# Copyright 2024 National Technology & Engineering Solutions of Sandia, LLC
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
 # (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
 # Government retains certain rights in this software.
 #
@@ -11,7 +11,7 @@
 These functions provide profiling for array inputs and ADC output values.
 """
 
-import pickle
+import pickle  # noqa: S403
 from pathlib import Path
 import numpy.typing as npt
 from keras.layers import Layer
@@ -26,14 +26,16 @@ def get_profiled_xbar_inputs(
     model: Layer,
     save_dir: str | None = None,
 ) -> npt.ArrayLike:
-    """Retrieves profiled inputs on all layers and optionally saves them to file.
+    """Retrieves profiled inputs on all layers and optionally saves to file.
 
     Args:
         model: Torch module to retrieve profiled inputs from
-        save_dir: Directory in which to save profiled input values (None to disable)
+        save_dir: Directory in which to save profiled input values
+            (None to disable)
 
     Returns:
-        List of numpy arrays, each array contains profiled values for a given layer
+        List of numpy arrays, each array contains profiled values for a given
+            layer
     """
     n_layers = len(analog_layers(model))
     all_xbar_inputs = [None] * n_layers
@@ -54,18 +56,20 @@ def get_profiled_xbar_inputs(
     return all_xbar_inputs
 
 
-def get_profiled_adc_inputs(
+def get_profiled_adc_inputs(  # noqa: C901
     model: Layer,
     save_dir: str | None = None,
 ) -> npt.ArrayLike:
-    """Retrieves profiled ADC inputs on all layers and optionally saves them to file.
+    """Retrieves profiled ADC inputs on all layers and optionally saves to file.
 
     Args:
         model: Torch module to retrieve profiled inputs from
-        save_dir: Directory in which to save profiled input values (None to disable)
+        save_dir: Directory in which to save profiled input values (None to
+            disable)
 
     Returns:
-        List of numpy arrays, each array contains profiled values for a given layer
+        List of numpy arrays, each array contains profiled values for a given
+            layer
     """
     n_layers = len(analog_layers(model))
     all_adc_inputs = [None] * n_layers
@@ -120,8 +124,8 @@ def get_profiled_adc_inputs(
     return all_adc_inputs
 
 
-def get_conductance_matrices(model: Layer) -> npt.ArrayLike:
-    """Retrieves the conductance matrices implementing all the layers of the network.
+def get_conductance_matrices(model: Layer) -> npt.ArrayLike:  # noqa:C901
+    """Retrieves the conductance matrices for all the layers of the network.
 
     Conductances are normalized (i.e. values are G/G_max) and will include
     any applied quantization, programming errors, and drift.
@@ -132,23 +136,24 @@ def get_conductance_matrices(model: Layer) -> npt.ArrayLike:
         List of dictionaries containing conductance matrices and metadata.
         1) Top level: a list of length = # layers
         2) For each layer, there is a dictionary:
-            'core_style' : mapping style of the core ("BALANCED", "OFFSET", "BITSLICED")
+            'core_style' : mapping style of the core ("BALANCED", "OFFSET",
+                "BITSLICED")
             'bitsliced_core' : mapping style of each bit slice core
                 ("NONE", "BALANCED", "OFFSET")
             'num_slices' : number of bit slices
             'Gmats' : a list of length = # row partitions x # column partitions
         3)  'Gmats' has for each partition:
             3a) If not using weight bit slicing, there is a dictionary
-                3a-1) If using balanced core, 'Gmat_pos' and 'Gmat_neg' contains the
-                      array conductances for the positive and negative weight
-                      sub-arrays, respectively
-                3a-2) If using offset core, 'Gmat' contains the array conductances for
-                      the single offset core
+                3a-1) If using balanced core, 'Gmat_pos' and 'Gmat_neg' contains
+                    the array conductances for the positive and negative weight
+                    sub-arrays, respectively
+                3a-2) If using offset core, 'Gmat' contains the array
+                    conductances for the single offset core
             3b) If using weight bit slicing, each partition has a list with
                 length = # slices
                 For each slice, there is a dictionary
-                The entries of the dictionary depend on whether bit sliced core uses
-                balanced or offset, same as above
+                The entries of the dictionary depend on whether bit sliced core
+                uses balanced or offset, same as above
     """
     Gmats = []
 
@@ -223,9 +228,9 @@ def corestyle_str(core_style, bitsliced_core_style):
     """Converts a core_style into a tuple of strings.
 
     Returns:
-        Tuple of strings containing a core style. For non-bitsliced cores the second
-        string is "NONE", for bit-sliced core the second string is the type of core used
-        with bit-slicing.
+        Tuple of strings containing a core style. For non-bitsliced cores the
+        second string is "NONE", for bit-sliced core the second string is the
+        type of core used with bit-slicing.
     """
     if core_style == CoreStyle.BALANCED:
         return ("BALANCED", "NONE")

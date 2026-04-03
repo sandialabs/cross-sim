@@ -1,5 +1,5 @@
 #
-# Copyright 2024 National Technology & Engineering Solutions of Sandia, LLC
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
 # (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
 # Government retains certain rights in this software.
 #
@@ -63,15 +63,16 @@ class AnalogDense(AnalogLayer, Dense):
 
         # There are two considerations with the following code:
         # 1) Purely CPU implementations of keras (when no GPU is avaliable)
-        # cause a pointer misalignment when using dlpack, so only use dlpack for when
-        # part of the application is resident on the GPU. Additionally because Keras
-        # uses a non-default stream for gpu operations an explicit stream synchronize
-        # is required to avoid a race condition.
-        # 2) Tensorflow from_dlpack doesn't support some stride patterns, specifically
-        # those coming from transposed tensors. Since AnalogLinear.apply uses
-        # transposes we need to first transpose the result before from_dlpack will work.
-        # Importantly the stream synchronize has to happen before we undo the transpose
-        # since it must be before any subsequent keras operations on the result.
+        # cause a pointer misalignment when using dlpack, so only use dlpack for
+        # when part of  the application is resident on the GPU. Additionally
+        # because Keras uses a non-default stream for gpu operations an explicit
+        # stream synchronize is required to avoid a race condition.
+        # 2) Tensorflow from_dlpack doesn't support some stride patterns,
+        # specifically those coming from transposed tensors. Since
+        # AnalogLinear.apply uses transposes we need to first transpose the
+        # result before from_dlpack will work. Importantly the stream
+        # synchronize has to happen before we undo the transpose since it must
+        # be before any subsequent keras operations on the result.
         out = self.core.apply(input_)
         if self.useGPU:
             out = from_dlpack(out.T.toDlpack())
@@ -108,7 +109,8 @@ class AnalogDense(AnalogLayer, Dense):
         """Gets the weight and bias values with errors applied.
 
         Returns:
-            List of numpy arrays with errors applied. CrossSim version of get_weights.
+            List of numpy arrays with errors applied. CrossSim version of
+            get_weights.
         """
         weight, bias = self.core.get_core_weights()
         weight = weight.transpose((1, 0))

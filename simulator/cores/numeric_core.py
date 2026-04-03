@@ -1,14 +1,22 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
+# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+# Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
+
 from abc import ABCMeta
 from . import ICore
 from simulator.parameters.core_parameters import CoreStyle
 from simulator.devices.device import Device
-from simulator.circuits.array import *
+from simulator.circuits.array import (
+    NoninterleavedInputSourceArray,
+    NoninterleavedSeparateSourceArray,
+    InterleavedInputSourceArray,
+    InterleavedSeparateSourceArray,
+    UncoupledNonlinearArray,
+)
 import numpy.typing as npt
 import typing
 
@@ -18,9 +26,14 @@ xp = ComputeBackend()  # Represents either cupy or numpy
 
 
 class NumericCore(ICore, metaclass=ABCMeta):
-    """An inner :py:class:`.ICore` that performs purely-numeric calculations."""
+    """Performs purely numeric simulations of crossbar matrix multiplication."""
 
     def __init__(self, params):
+        """Initializes the NumericCore.
+
+        Args:
+            params: Parameters for the simulation.
+        """
         self.matrix = None
         self.vector_vmm = None
         self.vector_mvm = None
@@ -54,20 +67,54 @@ class NumericCore(ICore, metaclass=ABCMeta):
         self.circuit_solver_mvm = None
         self.circuit_solver_vmm = None
         if self.simulate_parasitics:
+            # These solvers can model both parasitic resistance and I-V
+            # nonlinearity
             if not self.interleaved and self.current_from_input:
-                self.circuit_solver_mvm = NonInterleaved_InputSource_Array(params)
-                self.circuit_solver_vmm = NonInterleaved_InputSource_Array(params)
+                self.circuit_solver_mvm = NoninterleavedInputSourceArray(
+                    params, device=self.device
+                )
+                self.circuit_solver_vmm = NoninterleavedInputSourceArray(
+                    params, device=self.device
+                )
             elif not self.interleaved and not self.current_from_input:
-                self.circuit_solver_mvm = NonInterleaved_SeparateSource_Array(params)
-                self.circuit_solver_vmm = NonInterleaved_SeparateSource_Array(params)
+                self.circuit_solver_mvm = NoninterleavedSeparateSourceArray(
+                    params, device=self.device
+                )
+                self.circuit_solver_vmm = NoninterleavedSeparateSourceArray(
+                    params, device=self.device
+                )
             elif self.interleaved and self.current_from_input:
-                self.circuit_solver_mvm = Interleaved_InputSource_Array(params)
-                self.circuit_solver_vmm = Interleaved_InputSource_Array(params)
+                self.circuit_solver_mvm = InterleavedInputSourceArray(
+                    params, device=self.device
+                )
+                self.circuit_solver_vmm = InterleavedInputSourceArray(
+                    params, device=self.device
+                )
             elif self.interleaved and not self.current_from_input:
-                self.circuit_solver_mvm = Interleaved_SeparateSource_Array(params)
-                self.circuit_solver_vmm = Interleaved_SeparateSource_Array(params)
+                self.circuit_solver_mvm = InterleavedSeparateSourceArray(
+                    params, device=self.device
+                )
+                self.circuit_solver_vmm = InterleavedSeparateSourceArray(
+                    params, device=self.device
+                )
+        elif self.params.xbar.device.nonlinear_IV.enable:
+            # This solver models I-V nonlinearity only
+            self.circuit_solver_mvm = UncoupledNonlinearArray(
+                params, device=self.device
+            )
+            self.circuit_solver_vmm = UncoupledNonlinearArray(
+                params, device=self.device
+            )
 
     def set_matrix(self, matrix, error_mask=None):
+        """Sets the value of the conductance matrix.
+
+        Args:
+            matrix: Conductance matrix to set
+            error_mask: Boolean mask with the same shape as matrix to indicate
+                which values of the matrix should have errors applied.
+                Defaults to None.
+        """
         if self.params.simulation.useGPU:
             self.matrix = xp.array(matrix)
         else:
@@ -83,9 +130,19 @@ class NumericCore(ICore, metaclass=ABCMeta):
             self.matrix[error_mask] = matrix_error[error_mask]
 
     def set_vmm_inputs(self, vector):
+        """Sets the inputs that will be used in vector matrix multiplication.
+
+        Args:
+            vector: Input vector to set.
+        """
         self.vector_vmm = vector
 
     def set_mvm_inputs(self, vector):
+        """Sets the inputs that will be used in matrix vector multiplication.
+
+        Args:
+            vector: Input vector to set.
+        """
         self.vector_mvm = vector
 
     def run_xbar_vmm(
@@ -93,7 +150,16 @@ class NumericCore(ICore, metaclass=ABCMeta):
         vector: typing.Optional[npt.NDArray] = None,
         core_neg: "NumericCore" = None,
     ) -> npt.NDArray:
+        """Simulates a vector matrix multiplication using the crossbar.
 
+        Args:
+            vector: Vector to use. If no vector is specified then the input
+                vector for mvm currently set is used instead. Defaults to None.
+            core_neg: For use when interleaved option is True.
+
+        Returns:
+            npt.NDArray: Result of the matrix vector multiply using the crossbar
+        """
         if vector is None:
             vector = self.vector_vmm
 
@@ -123,7 +189,16 @@ class NumericCore(ICore, metaclass=ABCMeta):
         vector: typing.Optional[npt.NDArray] = None,
         core_neg: "NumericCore" = None,
     ) -> npt.NDArray:
+        """Simulates a matrix vector multiplication using the crossbar.
 
+        Args:
+            vector: Vector to use. If no vector is specified then the input
+                vector for mvm currently set is used instead. Defaults to None.
+            core_neg: For use when interleaved option is True.
+
+        Returns:
+            npt.NDArray: Result of the matrix vector multiply using the crossbar
+        """
         if vector is None:
             vector = self.vector_mvm
 
@@ -148,7 +223,7 @@ class NumericCore(ICore, metaclass=ABCMeta):
             matrix_neg,
         )
 
-    def run_xbar_operation(
+    def run_xbar_operation(  # noqa:C901
         self,
         matrix,
         vector,
@@ -157,12 +232,15 @@ class NumericCore(ICore, metaclass=ABCMeta):
         row_in,
         matrix_neg,
     ):
+        """A generalized functino to perform cross bar multiplications."""
         input_dim = len(vector.shape)
 
-        if self.simulate_parasitics and vector.any():
-
-            # Only create parasitics mask as needed, to avoid unnecessary storage of the VMM mask
-            # if only the MVM mask is needed, and vice versa
+        if (
+            self.simulate_parasitics or self.params.xbar.device.nonlinear_IV.enable
+        ) and vector.any():
+            # Only create parasitics mask as needed, to avoid unnecessary
+            # storage of the VMM mask if only the MVM mask is needed, and vice
+            # versa
             if self.Ncopy > 1 and not circuit_solver.useMask:
                 circuit_solver._create_parasitics_mask(self.matrix_original, self.Ncopy)
 
@@ -175,8 +253,9 @@ class NumericCore(ICore, metaclass=ABCMeta):
 
         elif len(matrix.shape) > 2:
             # Matmul read noise without parasitics
-            #   Note: the different handling of 2D and 3D input is a consequence of how
-            #   the dimensions need to be ordered for the baseline xp.matmul() call
+            #   Note: the different handling of 2D and 3D input is a consequence
+            #   of how the dimensions need to be ordered for the baseline
+            #   xp.matmul() call
             if input_dim == 2:
                 if row_in:
                     vector = vector.transpose()
@@ -188,14 +267,16 @@ class NumericCore(ICore, metaclass=ABCMeta):
             vector = xp.tile(vector, (matrix.shape[0], 1, 1, 1))
             if matrix_neg is not None:
                 # Interleaved
-                result = xp.sum(matrix * vector, axis=1) - xp.sum(matrix_neg * vector, axis=1)
+                result = xp.sum(matrix * vector, axis=1) - xp.sum(
+                    matrix_neg * vector, axis=1
+                )
             else:
                 # Non-interleaved
                 result = xp.sum(matrix * vector, axis=1)
             result = xp.transpose(result, (2, 0, 1))
 
             if input_dim == 2:
-                result = result[:,:,0]
+                result = result[:, :, 0]
                 if row_in:
                     result = result.transpose()
             if input_dim == 3 and not row_in:
@@ -203,7 +284,8 @@ class NumericCore(ICore, metaclass=ABCMeta):
 
         else:
             if matrix_neg is not None:
-                # Interleaved without parasitics: identical to normal balanced core operation
+                # Interleaved without parasitics: identical to normal balanced
+                # core operation
                 if row_in:
                     result = xp.matmul(*op_pair) - xp.matmul(matrix_neg, vector)
                 else:
@@ -224,10 +306,11 @@ class NumericCore(ICore, metaclass=ABCMeta):
         self.matrix = matrix.copy()
 
     def read_noise_matrix(self, vector=None, row_in=True) -> npt.NDArray:
-        """Applies noise to a weight matrix, accounting for whether the matrix inclues replicated weights."""
+        """Applies noise to a weight matrix.
 
+        This accounts for whether the matrix inclues replicated weights.
+        """
         if self.Ncopy == 1:
-
             # If input is 1D, just apply read noise to the conductance matrix
             if (
                 len(vector.shape) == 1
@@ -237,15 +320,16 @@ class NumericCore(ICore, metaclass=ABCMeta):
                 return self.device.read_noise(self.matrix.copy())
 
             # Batched read noise mode (used only if fast_matmul = True)
-            # If input is 2D or 3D, make a copy of the conductance matrix for each
-            # MVM so that read noise can be applied independently (but sampled in
-            # parallel) for each MVM
-            # The resulting 4D matrix has the same shape as the matrix that would
-            # otherwise be created in the parasitics solver, so the replicated and noised
-            # matrix can be passed directly into the parasitics solver
+            # If input is 2D or 3D, make a copy of the conductance matrix for
+            # each MVM so that read noise can be applied independently (but
+            # sampled in parallel) for each MVM
+            # The resulting 4D matrix has the same shape as the matrix that
+            # would otherwise be created in the parasitics solver, so the
+            # replicated and noised matrix can be passed directly into the
+            # parasitics solver
             else:
                 if len(vector.shape) == 2:
-                    input_index = (1 if row_in else 0)
+                    input_index = 1 if row_in else 0
                     expanded_matrix = xp.tile(
                         self.matrix[:, :, None], (1, 1, vector.shape[input_index])
                     )[:, :, xp.newaxis, :]
@@ -262,10 +346,13 @@ class NumericCore(ICore, metaclass=ABCMeta):
                         )
                 return self.device.read_noise(expanded_matrix)
 
-        # If doing a circuit simulation, must keep the full sized block diagonal matrix
+        # If doing a circuit simulation, must keep the full sized block diagonal
+        #  matrix
         elif self.Ncopy > 1 and self.simulate_parasitics:
             noisy_matrix = self.device.read_noise(self.matrix.copy())
-            circuit_solver = (self.circuit_solver_mvm if row_in else self.circuit_solver_vmm)
+            circuit_solver = (
+                self.circuit_solver_mvm if row_in else self.circuit_solver_vmm
+            )
             if not circuit_solver.useMask:
                 circuit_solver._create_parasitics_mask(self.matrix_original, self.Ncopy)
             noisy_matrix *= circuit_solver.mask
@@ -286,16 +373,21 @@ class NumericCore(ICore, metaclass=ABCMeta):
         return noisy_matrix
 
     def expand_matrix(self, Ncopy):
-        """Makes a big matrix containing M copies of the weight matrix so that multiple VMMs can be computed in parallel, SIMD style
+        """Makes a big matrix containing M copies of the weight matrix.
+
+        This allowst multiple VMMs can be computed in parallel, SIMD style
         Off-diagonal blocks of this matrix are all zero
-        If noise is enabled, additionally create a third matrix that contains all the nonzero elements of this big matrix
+        If noise is enabled, additionally create a third matrix that contains
+        all the nonzero elements of this big matrix.
         Intended for GPU use only, designed for neural network inference.
         """
-        # Keep a copy of original matrix, both for construction of the expanded matrix and as a backup for later restoration if needed
+        # Keep a copy of original matrix, both for construction of the expanded
+        # matrix and as a backup for later restoration if needed
 
         Nx, Ny = self.matrix.shape
 
-        # Keep a copy of the original un-expanded matrix so that it can be restored with unexpand_matrix
+        # Keep a copy of the original un-expanded matrix so that it can be
+        # restored with unexpand_matrix
         self.matrix_original = self.matrix.copy()
 
         if not self.params.xbar.device.read_noise.enable:
@@ -311,7 +403,8 @@ class NumericCore(ICore, metaclass=ABCMeta):
         else:
             # Block diagonal matrix for running MVMs
             self.matrix = xp.zeros((Ncopy * Nx, Ncopy * Ny), dtype=self.matrix.dtype)
-            # Dense matrix with the same number of non-zeros as the block diagonal for applying read noise
+            # Dense matrix with the same number of non-zeros as the block
+            # diagonal for applying read noise
             self.matrix_dense = xp.zeros((Ncopy, Nx, Ny), dtype=self.matrix.dtype)
             for m in range(Ncopy):
                 x_start, x_end = m * Nx, (m + 1) * Nx

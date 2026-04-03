@@ -1,6 +1,7 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
+# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+# Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
@@ -19,29 +20,28 @@ xp = ComputeBackend()
 class BalancedCore(WrapperCore):
     """A balanced core consisting of two inner cores.
 
-    One core is designated as "positive"; the other one as "negative". The actual value is the sum of the values of the inner cores.
+    One core is designated as "positive"; the other one as "negative". The
+    actual value is the sum of the values of the inner cores.
 
-    Both cores are started at the middle of their dynamic range. Requested updates are divided by two, and then performed on both cores,
-        but the update performed on the negative core first has its sign flipped.
+    Both cores are started at the middle of their dynamic range. Requested
+    updates are divided by two, and then performed on both cores,but the update
+    performed on the negative core first has its sign flipped.
     """
 
     def __init__(self, clipper_core_factory, params):
-        """:param clipper_core_factory:
-        :param params: all parameters
-        :type params: Parameters
-        :return:
-        """
+        """Initializes a core object."""
         WrapperCore.__init__(self, clipper_core_factory, params)
 
         self.core_pos = clipper_core_factory()
         self.core_neg = clipper_core_factory()
 
-        # Need to include the VMM case here also at some point, but right now it's only
-        # used in the MVM code
+        # Need to include the VMM case here also at some point, but right now
+        # it's only used in the MVM code
         self.adc_range_option = self.params.xbar.adc.mvm.adc_range_option
         self.adc_per_ibit = self.params.xbar.adc.mvm.adc_per_ibit
 
-        # subtract_current_in_xbar requires fast_balanced = False and interleaved_posneg = False
+        # subtract_current_in_xbar requires:
+        #  fast_balanced = False and interleaved_posneg = False
         self.dac_params = self.params.xbar.dac
         self.adc_params = self.params.xbar.adc
         self.input_params = self.params.core.mapping.inputs
@@ -82,16 +82,12 @@ class BalancedCore(WrapperCore):
                 matrix_norm < Wmin_res
             ) + (
                 self.core_pos.params.xbar.device.Gmin_norm + Wrange_xbar * matrix_norm
-            ) * (
-                matrix_norm >= Wmin_res
-            )
+            ) * (matrix_norm >= Wmin_res)
             mat_neg = self.core_pos.params.xbar.device.Gmin_norm * (
                 matrix_norm >= -Wmin_res
             ) + (
                 self.core_pos.params.xbar.device.Gmin_norm - Wrange_xbar * matrix_norm
-            ) * (
-                matrix_norm < -Wmin_res
-            )
+            ) * (matrix_norm < -Wmin_res)
             mat_pos = mat_pos.astype(xp.float32)
             mat_neg = mat_neg.astype(xp.float32)
 
@@ -113,7 +109,8 @@ class BalancedCore(WrapperCore):
         if self.fast_balanced:
             # If fast balanced is on, core_pos and core_neg are not used for MVM
             # The DAC in core_pos is still used
-            # core_neg is kept in memory to avoid errors when calling set_matrix() again
+            # core_neg is kept in memory to avoid errors when c
+            # alling set_matrix() again
             self.W_balanced = (
                 self.core_pos._read_matrix() - self.core_neg._read_matrix()
             )
@@ -124,7 +121,8 @@ class BalancedCore(WrapperCore):
 
         self.dac.set_limits(matrix)
 
-        # If profiling ADC inputs, initialize data structure here now that matrix dimensions are known
+        # If profiling ADC inputs, initialize data structure here now that
+        # matrix dimensions are known
         # Currently assuming profiling is only done for MVMs
         if self.analytics_params.profile_adc_inputs:
             if self.dac_params.mvm.input_bitslicing:
@@ -137,8 +135,9 @@ class BalancedCore(WrapperCore):
             if not self.subtract_current_in_xbar:
                 Nout_mvm *= 2
             Nmvms = self.analytics_params.ntest
-            # For convolutions, the size of the second dimension will be further scaled on the first
-            # mvm call, when the number of sliding windows per input is known
+            # For convolutions, the size of the second dimension will be further
+            # scaled on the first mvm call, when the number of sliding windows
+            # per input is known
             self.adc_inputs = xp.zeros((magbits, Nmvms * Nout_mvm), dtype=xp.float32)
             self.last_adc_input = 0
 
@@ -164,7 +163,12 @@ class BalancedCore(WrapperCore):
         op = "vmm"
         return self.run_xbar_operation(op, vector)
 
-    def run_xbar_operation(self, op, vector):
+    def run_xbar_operation(self, op, vector):  # noqa:C901
+        """Generic function to perform either an MVM or VMM operation.
+
+        Returns:
+            npt.NDArray: Result of the core's xbar operation
+        """
         function = "run_xbar_" + op
         core_pos_operation = getattr(self.core_pos, function)
         core_neg_operation = getattr(self.core_neg, function)
@@ -189,7 +193,7 @@ class BalancedCore(WrapperCore):
             )
 
         ################################
-        ##  ANALOG INPUT ENCODING
+        # ANALOG INPUT ENCODING
         ################################
         if not dac_params.input_bitslicing:
             if not self.interleaved_posneg:
@@ -220,7 +224,8 @@ class BalancedCore(WrapperCore):
                     i1 = self.last_adc_input
                     i2 = self.last_adc_input + num_inputs
                     self.adc_inputs[0, i1:i2] = xp.array(
-                        output.flatten(), dtype=xp.float32,
+                        output.flatten(),
+                        dtype=xp.float32,
                     )
                 else:
                     num_inputs = 2 * output_pos.size
@@ -232,7 +237,7 @@ class BalancedCore(WrapperCore):
                     )
 
         ################################
-        ##  INPUT BIT SLICING
+        # INPUT BIT SLICING
         ################################
         else:
             vector_slices = dac.convert_sliced(vector)
@@ -276,7 +281,8 @@ class BalancedCore(WrapperCore):
                         i1 = self.last_adc_input
                         i2 = self.last_adc_input + num_inputs
                         self.adc_inputs[k, i1:i2] = xp.array(
-                            output_bal.flatten(), dtype=xp.float32,
+                            output_bal.flatten(),
+                            dtype=xp.float32,
                         )
                     else:
                         num_inputs = 2 * output_pos.size
@@ -319,8 +325,8 @@ class BalancedCore(WrapperCore):
 
             # Scaling correction
             if self.subtract_current_in_xbar:
-                # Correct for the fact that for multi-bit slices the highest value is
-                # represented as 1.0 rather than 2^bits-1
+                # Correct for the fact that for multi-bit slices the highest
+                # value is represented as 1.0 rather than 2^bits-1
                 output *= (2**slice_size) - 1
                 # Correct for the fact that the underutilization of the most
                 # significant slice is not an exact divisor
@@ -381,6 +387,7 @@ class BalancedCore(WrapperCore):
         self.core_neg._restore_matrix(matrix[1])
 
     def expand_matrix(self, Ncopy):
+        """Expands the matrix to allow for parallel simulation."""
         # Calls expand_matrix in the inner cores
         # Makes multiple copies of matrix to compute multiple MVMs in parallel
         if not self.params.simulation.fast_balanced:
@@ -400,6 +407,7 @@ class BalancedCore(WrapperCore):
                 self.W_balanced[x_start:x_end, y_start:y_end] = W_temp.copy()
 
     def unexpand_matrix(self):
+        """Undoes the expand_matrix operation. Forms a single matrix."""
         if not self.params.simulation.fast_balanced:
             # Calls unexpand_matrix in the inner cores
             self.core_pos.unexpand_matrix()
