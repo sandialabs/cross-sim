@@ -117,7 +117,7 @@ def calibrate_adc_limits(
                 adc_inputs_k,
                 num_slices,
                 style = layer.params.core.bit_sliced.style,
-                Nrows = Nrows,
+                Nrows = layer.core.shape[1],
                 pct = bitslice_pct,
             )
         k += 1

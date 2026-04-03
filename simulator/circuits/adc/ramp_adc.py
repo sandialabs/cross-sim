@@ -1,6 +1,7 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
+# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+# Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
@@ -14,18 +15,21 @@ xp = ComputeBackend()
 
 class RampADC(IADC):
     """This class implements the ramp ADC model described in:
-    M. Spear et al, "The Impact of Analog-to-Digital Converter Architecture and Variability on Analog Neural Network Accuracy"
-    IEEE Journal on Exploratory Solid-State Computational Devices and Circuits (accepted), 2023.
+    M. Spear et al, "The Impact of Analog-to-Digital Converter Architecture and
+    Variability on Analog Neural Network Accuracy" IEEE Journal on Exploratory
+    Solid-State Computational Devices and Circuits (accepted), 2023.
 
-    This ramp ADC assumes that a single capacitive DAC is shared by all outputs of the array
-    The capacitive DAC generates a ramp signal, which is compared to the analog output of each column using
-    a per-column comparator.
-    This model simulates random mismatches in the capacitance inside the DACs and random offsets in the column comparators,
-    as well as finite gain in the amplifier output of the DAC.
+    This ramp ADC assumes that a single capacitive DAC is shared by all outputs
+    of the array. The capacitive DAC generates a ramp signal, which is compared
+    to the analog output of each column using a per-column comparator. This
+    model simulates random mismatches in the capacitance inside the DACs and
+    random offsets in the column comparators, as well as finite gain in the
+    amplifier output of the DAC.
     """
 
     # Initialize Ramp ADC
     def set_limits(self, matrix):
+        """Initialize the non-idealities for the Ramp ADC."""
         super().set_limits(matrix)
 
         # Ramp ADC parameters
@@ -65,8 +69,8 @@ class RampADC(IADC):
         bits_vec_ext = xp.arange(self.bits + 1)  # up to N
 
         if self.ramp_params.symmetric_cdac:
-            # Account for the fact that capacitance mismatch scales with the square root of capacitor size
-            # in a typical foundry process
+            # Account for the fact that capacitance mismatch scales with the
+            # square root of capacitor size in a typical foundry process
             cap_errors = xp.zeros(self.bits + 1)
             cap_errors[: self.bits] = 2**bits_vec + cap_mismatches[: self.bits] * (
                 2 ** (bits_vec / 2)
@@ -108,6 +112,7 @@ class RampADC(IADC):
 
     # Run-time method to simulate Ramp ADC
     def convert(self, vector):
+        """Perform an ADC conversion with a Ramp ADC."""
         if self.bits is None or self.bits == 0:
             return vector
 

@@ -1,5 +1,5 @@
 #
-# Copyright 2024 National Technology & Engineering Solutions of Sandia, LLC
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
 # (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
 # Government retains certain rights in this software.
 #
@@ -16,8 +16,8 @@ from .analog_layer import AnalogLayer
 
 from math import prod
 
-# Need numpy specifically for matrix formation as grouped convs use a build method
-# incompatible with cupy
+# Need numpy specifically for matrix formation as grouped convs use a build
+# method incompatible with cupy
 import numpy as np
 
 import numpy.typing as npt
@@ -28,10 +28,10 @@ xp = ComputeBackend()
 class AnalogConvolution(AnalogLayer):
     """CrossSim base class for N-dimensional convolutional layers.
 
-    Base class contains all functionality for n-dimensional convolutions except the
-    convolution operation. Implemented classes should implement at least one of
-    `apply_convolution_matvec` and `apply_convolution_matmul` which differ based on
-    whether convolutions are implemented with 1D MVMs or ND Matmuls.
+    Base class contains all functionality for n-dimensional convolutions except
+    the convolution operation. Implemented classes should implement at least one
+    of `apply_convolution_matvec` and `apply_convolution_matmul` which differ
+    based on whether convolutions are implemented with 1D MVMs or ND Matmuls.
     """
 
     def __init__(
@@ -49,31 +49,34 @@ class AnalogConvolution(AnalogLayer):
 
         Args:
             params:
-                CrossSimParameters object or list of CrossSimParameters (for layers
-                requiring multiple arrays) for the AnalogLinear layer. If a list, the
-                length must match the number of arrays used within AnalogCore.
+                CrossSimParameters object or list of CrossSimParameters (for
+                layers requiring multiple arrays) for the AnalogLinear layer. If
+                a list, the ength must match the number of arrays used within
+                AnalogCore.
             Nic:
                 Number of input channels, see torch.nn.Conv[N]D in_channels for
                 detailed documentation.
             Noc:
-                Number of output channels, see torch.nn.Conv[N]D out_channels for
-                detailed documentation.
-            kernel_size:
-                N-element tuple of the kernel size along each convolution dimension. See
-                torch.nn.Conv[N]D kernel_size for detailed documentation.
-            stride:
-                N-element tuple of the strides along each convolution dimension. See
-                torch.nn.Conv[N]D stride for detailed documentation.
-            dilation:
-                N-element tuple of the dilation rate along each convolution dimension.
-                See torch.nn.Conv[N]D dilation for detailed documentation. Only
-                dilation rates of 1 on all dimensions are supported.
-            groups:
-                Number of groups used for the convolution. See torch.nn.Conv[N]D groups
+                Number of output channels, see torch.nn.Conv[N]D out_channels
                 for detailed documentation.
+            kernel_size:
+                N-element tuple of the kernel size along each convolution
+                dimension. See torch.nn.Conv[N]D kernel_size for detailed
+                documentation.
+            stride:
+                N-element tuple of the strides along each convolution dimension.
+                See torch.nn.Conv[N]D stride for detailed documentation.
+            dilation:
+                N-element tuple of the dilation rate along each convolution
+                dimension. See torch.nn.Conv[N]D dilation for detailed
+                documentation. Only dilation rates of 1 on all dimensions are
+                supported.
+            groups:
+                Number of groups used for the convolution. See torch.nn.Conv[N]D
+                groups for detailed documentation.
             bias_rows:
-                Integer indicating the number of rows to use to implement the bias
-                within the array. 0 implies a digital bias.
+                Integer indicating the number of rows to use to implement the
+                bias within the array. 0 implies a digital bias.
         """
         # Keep a copy of the convolution parameters
         if not isinstance(params, list):
@@ -119,8 +122,9 @@ class AnalogConvolution(AnalogLayer):
     def set_matrix(self, matrix: npt.ArrayLike, verbose=False) -> None:
         """Programs a matrix into the layer's internal AnalogCore.
 
-        AnalogConvolution needs a special set_matrix function to handle parallel matrix
-        expansion to accelerate simulation when using matvec-based convolutions.
+        AnalogConvolution needs a special set_matrix function to handle parallel
+        matrix expansion to accelerate simulation when using matvec-based
+        convolutions.
 
         See AnalogCore.set_matrix for details.
 
@@ -143,9 +147,9 @@ class AnalogConvolution(AnalogLayer):
     def get_core_weights(self) -> tuple[npt.NDArray, npt.NDArray | None]:
         """Gets the weight and bias matrices with errors applied.
 
-        This function only returns weight and bias values which can be derived from
-        the stored array values. If the layer uses a digital bias the returned bias
-        will be None.
+        This function only returns weight and bias values which can be derived
+        from the stored array values. If the layer uses a digital bias the
+        returned bias will be None.
 
         Returns:
             Tuple of numpy arrays, 2D for weights, 1D or None for bias.
@@ -180,14 +184,14 @@ class AnalogConvolution(AnalogLayer):
         weight: npt.ArrayLike,
         bias: npt.ArrayLike | None = None,
     ) -> npt.NDArray:
-        """Build a 2D weight matrix for the conv layer for programming into an array.
+        """Build a 2D weight matrix for into programming into an array.
 
         Args:
             weight:
-                [3,4,5]D numpy NDArray (or similar) with the weight matrix of the neural
-                network for (1,2,3)D convolutions. Must have shape
-                (Noc, Nic, kernel_size) where kernel_size has as many dimensions as the
-                convolutional layer.
+                [3,4,5]D numpy NDArray (or similar) with the weight matrix of
+                the neural network for (1,2,3)D convolutions. Must have shape
+                (Noc, Nic, kernel_size) where kernel_size has as many dimensions
+                as the convolutional layer.
             bias:
                 1D numpy NDArray (or similar) with the bias vector of the neural
                 network. Ignored if the matrix does not use an analog_bias. Also
@@ -274,7 +278,8 @@ class AnalogConvolution(AnalogLayer):
     def __setitem__(self, key, value):
         """Forward setitem on the layer to the internal AnalogCore.
 
-        Used primarily for PyTorch layer synchronization by setting values with masks.
+        Used primarily for PyTorch layer synchronization by setting values with
+        masks.
         """
         # When setting the weights directly the input may not be reshaped yet
         # So reshape here. Should be safe as bias is 1D.
@@ -311,8 +316,9 @@ class AnalogConvolution1D(AnalogConvolution):
     ) -> None:
         """Initializes a 1D convolutional layer wrapper around AnalogCore.
 
-        See AnalogConvolution for argument details. Note that kernel_size, stride, and
-        dilation (values >1 not currently supported) must be 1 entry tuples.
+        See AnalogConvolution for argument details. Note that kernel_size,
+        stride, and dilation (values >1 not currently supported) must be 1 entry
+        tuples.
         """
         super().__init__(
             params,
@@ -328,9 +334,10 @@ class AnalogConvolution1D(AnalogConvolution):
     def apply(self, M_input: npt.ArrayLike) -> npt.NDArray:
         """Analog MVM based forward operation for a 1D convolutional layer.
 
-        Will call either apply_convolution_matvec or apply_convolution_matmul based on
-        params.simulation.fast_matmul. Matvec will always be used if the underlying
-        simulation is not compatible with matmuls. See fast_matmul for more details.
+        Will call either apply_convolution_matvec or apply_convolution_matmul
+        based on params.simulation.fast_matmul. Matvec will always be used if
+        the underlying simulation is not compatible with matmuls. See
+        fast_matmul for more details.
 
         Args:
             M_input:
@@ -344,7 +351,9 @@ class AnalogConvolution1D(AnalogConvolution):
         """
         return super().apply(M_input)
 
-    def apply_convolution_matvec(self, M_input: npt.ArrayLike) -> npt.NDArray:
+    def apply_convolution_matvec(  # noqa:C901
+        self, M_input: npt.ArrayLike
+    ) -> npt.NDArray:
         """Applies a convolution operation using 1D MVMs.
 
         Uses the sliding window method. Each MVM returns returns the outputs
@@ -425,7 +434,7 @@ class AnalogConvolution1D(AnalogConvolution):
                             dtype=M_input_.dtype,
                         )
                         v_start, v_end = 0, NrowsX
-                        for xxp in range(x_block):
+                        for _xxp in range(x_block):
                             Min_ij = M_input_[:, x_start]
                             Min_large[v_start:v_end] = Min_ij
                             v_start += Nrows
@@ -440,7 +449,7 @@ class AnalogConvolution1D(AnalogConvolution):
                     x_end = x_start + Kx
                     v_start, v_end = 0, Nic
 
-                    for xxp in range(x_block):
+                    for _xxp in range(x_block):
                         Min_ij[v_start:v_end, :] = M_input_[
                             :,
                             x_start:x_end,
@@ -473,7 +482,9 @@ class AnalogConvolution1D(AnalogConvolution):
         else:
             return xp.stack(M_outs).reshape((Nbatch, Noc, Nx_out))
 
-    def apply_convolution_matmul(self, M_input: npt.ArrayLike) -> npt.NDArray:
+    def apply_convolution_matmul(  # noqa:C901
+        self, M_input: npt.ArrayLike
+    ) -> npt.NDArray:
         """Applies a convolution operation using 1D matrix multiplications.
 
         Uses matrix multiplication to compute all sliding windows and all
@@ -571,8 +582,9 @@ class AnalogConvolution2D(AnalogConvolution):
     ) -> None:
         """Initializes a 2D convolutional layer wrapper around AnalogCore.
 
-        See AnalogConvolution for argument details. Note that kernel_size, stride, and
-        dilation (values >1 not currently supported) must be 2 entry tuples.
+        See AnalogConvolution for argument details. Note that kernel_size,
+        stride, and dilation (values >1 not currently supported) must be 2 entry
+        tuples.
         """
         super().__init__(
             params,
@@ -588,9 +600,10 @@ class AnalogConvolution2D(AnalogConvolution):
     def apply(self, M_input: npt.ArrayLike) -> npt.NDArray:
         """Analog MVM based forward operation for a 2D convolutional layer.
 
-        Will call either apply_convolution_matvec or apply_convolution_matmul based on
-        params.simulation.fast_matmul. Matvec will always be used if the underlying
-        simulation is not compatible with matmuls. See fast_matmul for more details.
+        Will call either apply_convolution_matvec or apply_convolution_matmul
+        based on params.simulation.fast_matmul. Matvec will always be used if
+        the underlying simulation is not compatible with matmuls. See
+        fast_matmul for more details.
 
         Args:
             M_input:
@@ -605,7 +618,9 @@ class AnalogConvolution2D(AnalogConvolution):
         """
         return super().apply(M_input)
 
-    def apply_convolution_matvec(self, M_input: npt.ArrayLike) -> npt.NDArray:
+    def apply_convolution_matvec(  # noqa:C901
+        self, M_input: npt.ArrayLike
+    ) -> npt.NDArray:
         """Applies a convolution operation using 2D MVMs.
 
         Uses the sliding window method. Each MVM returns returns the outputs
@@ -694,9 +709,9 @@ class AnalogConvolution2D(AnalogConvolution):
                                 dtype=M_input_.dtype,
                             )
                             v_start, v_end = 0, NrowsX
-                            for xxp in range(x_block):
+                            for _xxp in range(x_block):
                                 y_start = y_start0
-                                for yyp in range(y_block):
+                                for _yyp in range(y_block):
                                     Min_ij = M_input_[:, x_start, y_start]
                                     Min_large[v_start:v_end] = Min_ij
                                     y_start += strideY
@@ -711,10 +726,10 @@ class AnalogConvolution2D(AnalogConvolution):
                         x_end = x_start + Kx
                         v_start, v_end = 0, Nic
 
-                        for xxp in range(x_block):
+                        for _xxp in range(x_block):
                             y_start = y_start0
                             y_end = y_start + Ky
-                            for yyp in range(y_block):
+                            for _yyp in range(y_block):
                                 Min_ij[v_start:v_end, :, :] = M_input_[
                                     :,
                                     x_start:x_end,
@@ -750,7 +765,9 @@ class AnalogConvolution2D(AnalogConvolution):
         else:
             return xp.stack(M_outs).reshape((Nbatch, Noc, Nx_out, Ny_out))
 
-    def apply_convolution_matmul(self, M_input: npt.ArrayLike) -> npt.NDArray:
+    def apply_convolution_matmul(  # noqa:C901
+        self, M_input: npt.ArrayLike
+    ) -> npt.NDArray:
         """Applies a convolution operation using 2D matrix multiplications.
 
         Uses matrix multiplication to compute all sliding windows and all
@@ -853,8 +870,9 @@ class AnalogConvolution3D(AnalogConvolution):
     ) -> None:
         """Initializes a 3D convolutional layer wrapper around AnalogCore.
 
-        See AnalogConvolution for argument details. Note that kernel_size, stride, and
-        dilation (values >1 not currently supported) must be 3 entry tuples.
+        See AnalogConvolution for argument details. Note that kernel_size,
+        stride, and dilation (values >1 not currently supported) must be 3 entry
+        tuples.
 
         Matvec-based operations are not supported for 3D networks.
         """
@@ -872,19 +890,21 @@ class AnalogConvolution3D(AnalogConvolution):
     def apply(self, M_input: npt.ArrayLike) -> npt.NDArray:
         """Analog MVM based forward operation for a 3D convolutional layer.
 
-        Will call either apply_convolution_matvec or apply_convolution_matmul based on
-        params.simulation.fast_matmul. Matvec will always be used if the underlying
-        simulation is not compatible with matmuls. See fast_matmul for more details.
+        Will call either apply_convolution_matvec or apply_convolution_matmul
+        based on params.simulation.fast_matmul. Matvec will always be used if
+        the underlying simulation is not compatible with matmuls. See
+        fast_matmul for more details.
 
         Args:
             M_input:
-                A 4D or 5D of size (Nic, Nx, Ny, Nz) or (Nbatch, Nic, Nx, Ny, Nz). The
-                trailing dimension must match self.Nic.
+                A 4D or 5D of size (Nic, Nx, Ny, Nz) or
+                (Nbatch, Nic, Nx, Ny, Nz). The trailing dimension must match
+                self.Nic.
 
         Returns:
             A 4D or 5D of size (Noc, Nx_out, Ny_out, Nz_out) or
-            (Nbatch, Noc, Nx_out, Ny_out, Nz_out). The number of dimensions of the
-            returned matrix will match the number of dimensions of the input
+            (Nbatch, Noc, Nx_out, Ny_out, Nz_out). The number of dimensions of
+            the returned matrix will match the number of dimensions of the input
             matrix.
 
         """
@@ -901,10 +921,12 @@ class AnalogConvolution3D(AnalogConvolution):
         See AnalogConvolution2D.apply for argument documentation.
         """
         raise NotImplementedError(
-            "Matvec computation for 3D Convolutions is not" " currently implemented.",
+            "Matvec computation for 3D Convolutions is not currently implemented.",
         )
 
-    def apply_convolution_matmul(self, M_input: npt.ArrayLike) -> npt.NDArray:
+    def apply_convolution_matmul(  # noqa:C901
+        self, M_input: npt.ArrayLike
+    ) -> npt.NDArray:
         """Applies a convolution operation using 3D matrix multiplications.
 
         Uses matrix multiplication to compute all sliding windows and all

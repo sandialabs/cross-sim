@@ -1,6 +1,7 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
+# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+# Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
@@ -14,17 +15,17 @@ xp = ComputeBackend()
 
 
 class WrapperCore(ICore, metaclass=ABCMeta):
-    """Superclass for "wrapper" cores -- such as OffsetCore, BalancedCore, and BitslicedCore.
-    Instances of WrapperCore are created and called by the outermost (algorithm-facing) core, which is AnalogCore.
+    """Superclass for "wrapper" cores.
+
+    Current wrapper cores: such as OffsetCore, BalancedCore, and BitslicedCore.
+    Instances of WrapperCore are created and called by the outermost
+    (algorithm-facing) core, which is AnalogCore.
+
     The subclass must implement the _wrapper_* methods.
     """
 
     def __init__(self, clipper_core_factory, params):
-        """:param clipper_core_factory:
-        :param params:
-        :type params: Parameters
-        :return:
-        """
+        """Initializes a core object."""
         self.params = params
         self.clipper_core_factory = clipper_core_factory
         self.core_params = params.core
@@ -41,10 +42,13 @@ class WrapperCore(ICore, metaclass=ABCMeta):
         )
 
     def set_matrix(self, matrix, weight_limits=None, error_mask=None):
-        # The weight clipping range might not be known during initialization
-        # This is because of the percentile option which determines the limits when matrix is set
-        # So all the clipping limits are now set inside set_matrix()
+        """Sets the values of the internal cores from a matrix.
 
+        The weight clipping range might not be known during initialization.
+        This is because of the percentile option which determines the limits
+        when matrix is set. So all the clipping limits are now set inside
+        set_matrix().
+        """
         if weight_limits:
             self.min, self.max = weight_limits
 
@@ -52,8 +56,8 @@ class WrapperCore(ICore, metaclass=ABCMeta):
         self.weight_scale = self.range / self.params.xbar.device.Grange_norm
         self.out_prefactor = self.weight_scale / self.scale_wtmodel
 
-        # If we aren't using input percentile scaling we can input and output scaling
-        # here. Otherwise we'll do it inside the set_***_inputs function
+        # If we aren't using input percentile scaling we can input and output
+        # scaling here. Otherwise we'll do it inside the set_***_inputs function
         if not self.vmm_input_percentile_scaling:
             self.vmm_in_scale = (
                 self.vmm_in_prefactor / self.params.core.mapping.inputs.vmm.range
@@ -79,6 +83,7 @@ class WrapperCore(ICore, metaclass=ABCMeta):
         )
 
     def set_vmm_inputs(self, vector, input_limits=None):
+        """Sets the inputs that will be used in vector matrix multiplication."""
         if input_limits and self.vmm_input_percentile_scaling:
             self.vmm_in_scale = self.vmm_in_prefactor / (
                 input_limits[1] - input_limits[0]
@@ -93,6 +98,7 @@ class WrapperCore(ICore, metaclass=ABCMeta):
         return self._wrapper_set_vmm_inputs(vector_in)
 
     def set_mvm_inputs(self, vector, input_limits=None):
+        """Sets the inputs that will be used in matrix vector multiplication."""
         if input_limits and self.mvm_input_percentile_scaling:
             self.mvm_in_scale = self.mvm_in_prefactor / (
                 input_limits[1] - input_limits[0]
@@ -107,6 +113,7 @@ class WrapperCore(ICore, metaclass=ABCMeta):
         return self._wrapper_set_mvm_inputs(vector_in)
 
     def run_xbar_vmm(self, vector=None, input_limits=None):
+        """Simulates a vector matrix multiplication using the crossbar."""
         # Set the vector if an argument is passed
         if vector is not None:
             self.set_vmm_inputs(vector, input_limits)
@@ -117,6 +124,7 @@ class WrapperCore(ICore, metaclass=ABCMeta):
         return output
 
     def run_xbar_mvm(self, vector=None, input_limits=None):
+        """Simulates a matrix vector multiplication using the crossbar."""
         # Set the vector if an argument is passed
         if vector is not None:
             self.set_mvm_inputs(vector, input_limits)

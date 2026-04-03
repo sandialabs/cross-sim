@@ -7,9 +7,17 @@ CrossSim provides implementations of neural network layers which wrap the Analog
 ### Supported Layers:
 - Linear
 - 1-3D Conv Layers (including depthwise and grouped convolutions)
+- RNNCell
+- LSTMCell
+- GRUCell
+- RNN
+- LSTM
+- GRU
 
 ### Known Limitations:
 - Conv layers do not support dilated convolutions
+- RNN, LSTM, and GRU layers do not support bidirectional
+- LSTM does not support projection
 
 ## Adding New Layers
 ------

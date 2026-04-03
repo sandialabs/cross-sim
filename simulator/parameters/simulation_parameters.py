@@ -1,7 +1,7 @@
 #
-# Copyright 2017 National Technology & Engineering Solutions of Sandia, LLC
-# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government
-# retains certain rights in this software.
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
+# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+# Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
@@ -26,26 +26,40 @@ class SimulationParameters(BaseParameters):
         analytics (AnalyticsParameters): Analytics parameters
         useGPU (bool): Whether to use GPU
         gpu_id (int): ID of GPU to use
-        Niters_max_parasitics (int):  Max number of iterations for parasitic circuit
-            solver (exceeding this causes model to conclude Rp is too high)
-        Verr_th_mvm (float):  MVM/VMM error threshold for convergence in parasitic
-            circuit model. This is in normalized input units (-1 to 1), and is
-            proportional to input voltage.
-        Verr_matmul_criterion (str): When using parasitics in matmul mode, how to
-            aggregate voltage errors across different MVMs to determine convergence
-        relaxation_gamma (float): Relaxation parameter for parasitic circuit solver.
+        Niters_max_parasitics (int):  Max number of iterations for parasitic
+            circuit solver (exceeding this causes model to conclude Rp is too
+            high)
+        Verr_th_mvm (float):  MVM/VMM error threshold for convergence in
+            parasitic circuit model. This is in normalized input units
+            (-1 to 1), and is proportional to input voltage.
+        Verr_matmul_criterion (str): When using parasitics in matmul mode, how
+            to aggregate voltage errors across different MVMs to determine
+            convergence
+        relaxation_gamma (float): Relaxation parameter for parasitic circuit
+            solver.
             gamma < 1 implements successive under-relaxation.
             gamma > 1 implements successive over-relaxation.
-        disable_fast_balanced (bool): fast_balanced implements MVM in BalancedCore or
-            BitSlicedCore rather than calling the method in NumericCore for speed.
-            Will be done  automatically if the params are compatible with fast_balanced,
-            unless this param is true
-        disable_fast_matmul (bool): fast_matmul uses matrix multiplies instead of
-            MVMs when performing matmul (including convolution) operations. This is
-            faster and shouldn't impact accuracy. Will be done automatically unless 
-            this param is true
-        hide_convergence_msg (bool): Hide messages related to re-trials of circuit
-            simulations with a reduced relaxation parameter
+        disable_fast_balanced (bool): fast_balanced implements MVM in
+            BalancedCore or BitSlicedCore rather than calling the method in
+            NumericCore for speed. Will be done  automatically if the params are
+            compatible with fast_balanced, unless this param is true
+        disable_fast_matmul (bool): fast_matmul uses matrix multiplies instead
+            of MVMs when performing matmul (including convolution) operations.
+            This is faster and shouldn't impact accuracy. Will be done
+            automatically unless this param is true
+        disable_fast_nonlinear_IV (bool): fast_nonlinear_IV changes how
+            nonlinear I-V effects are simulated.
+            If fast_nonlinear_IV = False, it will use the nonlinear_current()
+                method in the device, and current sums are computed in the
+                circuit solver.
+            If fast_nonlinear_IV = True, it will use the nonlinear_current_sum()
+                method in the device, with current sums computed directly in the
+                device model for better performance.
+            In the absence of parasitics with virtual ground at the outputs, the
+            two are functionally equivalent as long as the two methods in the
+            device model are physically consistent.
+        hide_convergence_msg (bool): Hide messages related to re-trials of
+            circuit simulations with a reduced relaxation parameter
     """
 
     convolution: ConvolutionParameters = None
@@ -54,20 +68,23 @@ class SimulationParameters(BaseParameters):
     gpu_id: int = 0
     Niters_max_parasitics: int = 100
     Verr_th_mvm: float = 1e-3
-    Verr_matmul_criterion: str = 'max_max'
+    Verr_matmul_criterion: str = "max_max"
     relaxation_gamma: float = 1
     disable_fast_balanced: bool = False
     disable_fast_matmul: bool = False
+    disable_fast_nonlinear_IV: bool = False
     hide_convergence_msg: bool = False
 
     @property
     def fast_balanced(self):
+        """Treat balanced arrays as a single signed array."""
         if self.disable_fast_balanced:
             return False
         params = self.root
-        if (params.core.style != CoreStyle.BALANCED) and \
-            not (params.core.style == CoreStyle.BITSLICED and \
-            params.core.bit_sliced.style == BitSlicedCoreStyle.BALANCED):
+        if (params.core.style != CoreStyle.BALANCED) and not (
+            params.core.style == CoreStyle.BITSLICED
+            and params.core.bit_sliced.style == BitSlicedCoreStyle.BALANCED
+        ):
             return False
         if (
             params.xbar.device.read_noise.enable
@@ -75,6 +92,8 @@ class SimulationParameters(BaseParameters):
         ):
             return False
         if params.xbar.array.parasitics.enable:
+            return False
+        if params.xbar.device.nonlinear_IV.enable:
             return False
         if not params.core.balanced.subtract_current_in_xbar:
             return False
@@ -85,8 +104,23 @@ class SimulationParameters(BaseParameters):
         return True
 
     @property
-    def fast_matmul(self):
+    def fast_matmul(self) -> bool:
+        """Use the Matrix Multiply fast path for computation."""
         return not self.disable_fast_matmul
+
+    @property
+    def fast_nonlinear_IV(self) -> bool:
+        """Use the fast Nonlinear IV compuation.
+
+        Automatically enabled if read noise and parastic resistance are not
+        enabled.
+        """
+        params = self.root
+        return params.xbar.device.nonlinear_IV.enable and not (
+            self.disable_fast_nonlinear_IV
+            or params.xbar.array.parasitics.enable
+            or params.xbar.device.read_noise.enable
+        )
 
 
 @dataclass(repr=False)
@@ -111,12 +145,13 @@ class AnalyticsParameters(BaseParameters):
     """Parameters for capturing analytics.
 
     Attributes:
-        profile_xbar_inputs (bool): Profile array digital inputs inside AnalogCore,
-            to be saved and used for optimal calibration of input ranges
-        profile_adc_inputs (bool): Profile pre-ADC input values inside core, to be
-            saved and used for optimal calibration of ADC ranges
-        ntest (int): Number of images in dataset, used to allocate storage for ADC
-            input profiling
+        profile_xbar_inputs (bool): Profile array digital inputs inside
+            AnalogCore, to be saved and used for optimal calibration of input
+            ranges
+        profile_adc_inputs (bool): Profile pre-ADC input values inside core, to
+            be saved and used for optimal calibration of ADC ranges
+        ntest (int): Number of images in dataset, used to allocate storage for
+            ADC input profiling
     """
 
     profile_xbar_inputs: bool = False

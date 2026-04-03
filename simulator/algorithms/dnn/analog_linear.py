@@ -1,5 +1,5 @@
 #
-# Copyright 2024 National Technology & Engineering Solutions of Sandia, LLC
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
 # (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
 # Government retains certain rights in this software.
 #
@@ -34,18 +34,19 @@ class AnalogLinear(AnalogLayer):
 
         Args:
             params:
-                CrossSimParameters object or list of CrossSimParameters (for layers
-                requiring multiple arrays) for the AnalogLinear layer. If a list, the
-                length must match the number of arrays used within AnalogCore.
+                CrossSimParameters object or list of CrossSimParameters (for
+                layers requiring multiple arrays) for the AnalogLinear layer.
+                If a list, the length must match the number of arrays used
+                within AnalogCore.
             in_features:
-                Number of input features, see torch.nn.Linear in_features for detailed
-                documentation.
+                Number of input features, see torch.nn.Linear in_features for
+                detailed documentation.
             out_features:
-                Number of output features, see torch.nn.Linear in_features for detailed
-                documentation.
+                Number of output features, see torch.nn.Linear in_features for
+                detailed documentation.
             bias_rows:
-                Integer indicating the number of rows to use to implement the bias
-                within the array. 0 implies a digital bias.
+                Integer indicating the number of rows to use to implement the
+                bias within the array. 0 implies a digital bias.
         """
         if not isinstance(params, list):
             self.params = params
@@ -76,12 +77,12 @@ class AnalogLinear(AnalogLayer):
         weight: npt.ArrayLike,
         bias: npt.ArrayLike | None = None,
     ) -> npt.NDArray:
-        """Build a 2D weight matrix for the linear layer for programming into an array.
+        """Build a 2D weight matrix of the for programming into an array.
 
         Args:
             weight:
-                2D numpy NDArray (or similar) with the weight matrix of the neural
-                network. Must have shape (out_features, in_features).
+                2D numpy NDArray (or similar) with the weight matrix of the
+                neural network. Must have shape (out_features, in_features).
             bias:
                 1D numpy NDArray (or similar) with the bias vector of the neural
                 network. Ignored if the matrix does not use an analog_bias. Also
@@ -122,9 +123,9 @@ class AnalogLinear(AnalogLayer):
     def get_core_weights(self) -> tuple[npt.NDArray, npt.NDArray | None]:
         """Gets the weight and bias matrices with errors applied.
 
-        This function only returns weight and bias values which can be derived from
-        the stored array values. If the layer uses a digital bias the returned bias
-        will be None.
+        This function only returns weight and bias values which can be derived
+        from the stored array values. If the layer uses a digital bias the
+        returned bias will be None.
 
         Returns:
             Tuple of numpy arrays, 2D for weights, 1D or None for bias.
@@ -140,17 +141,20 @@ class AnalogLinear(AnalogLayer):
     def apply(self, M_input: npt.ArrayLike) -> npt.NDArray:
         """Analog MVM based forward operation for a Linear layer.
 
-        This function assumes that there is at-most 1 leading dimension (a single batch
-        dimension). Layer implementations are responsible for reshaping inputs and
-        outputs for this function as needed by the neural network framework.
+        This function assumes that there is at-most 1 leading dimension (a
+        single batch dimension). Layer implementations are responsible for
+        reshaping inputs and outputs for this function as needed by the neural
+        network framework.
 
         Args:
             M_input:
-                1D or 2D Numpy NDArray (or similar input for the forward operation.
+                1D or 2D Numpy NDArray (or similar input for the forward
+                operation.
 
         Returns:
-            1D or 2D Numpy NDArray result of the operation. The number of dimensions in
-            the return value will match the number of dimensions of the input.
+            1D or 2D Numpy NDArray result of the operation. The number of
+            dimensions in the return value will match the number of dimensions
+            of the input.
         """
         M_input = xp.asarray(M_input)
 
@@ -181,14 +185,15 @@ class AnalogLinear(AnalogLayer):
             M_input_all[:, : -self.bias_rows] = M_input
             M_input = M_input_all
 
-        # To keep AnalogLinear consistent with AnalogConvolution we adopt the convention
-        # that the first dimension of the matrix is the number of outputs. This means
-        # all neural network operations will use the MVM rather than VMM code path.
-        # We use a double transpose on the input and output to remedy the
-        # inconsistency. Notably, this should be fast in simulation due to how
-        # numpy/cupy implement transpose and in hardware this just corresponds to
-        # how the hardware indexes the data array rather than a real transpose
-        # operation that needs to be implemented in software.
+        # To keep AnalogLinear consistent with AnalogConvolution we adopt the
+        # convention that the first dimension of the matrix is the number of
+        # outputs. This means all neural network operations will use the MVM
+        # rather than VMM code path. We use a double transpose on the input and
+        # output to remedy the inconsistency. Notably, this should be fast in
+        # simulation due to how numpy/cupy implement transpose and in hardware
+        # this just corresponds to how the hardware indexes the data array
+        # rather than a real transpose operation that needs to be implemented
+        # in software.
         M_out = self.core.matmul(M_input.T).T
 
         if no_batch:

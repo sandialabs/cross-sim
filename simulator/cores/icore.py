@@ -1,6 +1,7 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
+# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+# Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
@@ -11,13 +12,15 @@ from abc import abstractmethod, ABCMeta
 
 
 class ICore(metaclass=ABCMeta):
-    """Represents the minimum subset of functions that any MVM core must implement (and provide an end-user).
+    """Interface for any MVM core.
 
-    There are also some convenience functions that were copied over from the (now-defunct) :py:class:`NeuralCore`.
+    There are also some convenience functions that were copied over from the
+    (now-defunct) :py:class:`NeuralCore`.
     """
 
     @property
     def range(self):
+        """Value range of the core."""
         return self.max - self.min
 
     @abstractmethod
@@ -68,7 +71,8 @@ class ICore(metaclass=ABCMeta):
     def _save_matrix(self):
         """Save the internal matrix held by this core (debug method).
 
-        Unlike _read_matrix, all data necessary to restore the matrix is provided.
+        Unlike _read_matrix, all data necessary to restore the matrix is
+        provided.
 
         No quantization or other errors are applied.
         """
@@ -78,7 +82,8 @@ class ICore(metaclass=ABCMeta):
     def _restore_matrix(self, matrix):
         """Restore an internal matrix held by this core (debug method).
 
-        You should only use a matrix obtained from _save_matrix, as _read_matrix may remove needed values (e.g.: from an offset core).
+        You should only use a matrix obtained from _save_matrix, as _read_matrix
+        may remove needed values (e.g.: from an offset core).
 
         No quantization or other errors are applied.
         """

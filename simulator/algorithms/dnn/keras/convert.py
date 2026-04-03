@@ -1,5 +1,5 @@
 #
-# Copyright 2024 National Technology & Engineering Solutions of Sandia, LLC
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
 # (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
 # Government retains certain rights in this software.
 #
@@ -87,8 +87,8 @@ def from_keras(
     Returns:
         A copy of the input model with layers replaced with CrossSim equivalents
     """
-    # If the model itself is convertible, meaning it is a singular layer, convert
-    # it so it doesn't fail when model.layers is called
+    # If the model itself is convertible, meaning it is a singular layer,
+    # convert it so it doesn't fail when model.layers is called
     if type(model) in _conversion_map:
         return _conversion_map[type(model)].from_keras(model, params, bias_rows)
 
@@ -142,9 +142,9 @@ def to_keras(
 
     Args:
         model:
-            Keras model to convert layers within. This can either be a single layer,
-            a Sequential model, a functional model. Other forms of model subclassing
-            are not currently supported.
+            Keras model to convert layers within. This can either be a single
+            layer, a Sequential model, a functional model. Other forms of model
+            subclassing are not currently supported.
         physical_weights:
             Bool or list of bools indicating whether to use weights with
             physical non-idealities (e.g. programming and drift errors)
@@ -156,8 +156,8 @@ def to_keras(
         A copy of the input model with CrossSim layers replaced with keras
         equivalents
     """
-    # If the model itself is convertible, meaning it is a singular layer, convert
-    # it so it doesn't fail when model.layers is called
+    # If the model itself is convertible, meaning it is a singular layer,
+    # convert it so it doesn't fail when model.layers is called
     if type(model) in _conversion_map.values():
         return type(model).to_keras(model, physical_weights)
 
@@ -190,8 +190,9 @@ def convertible_layers(model: Layer, expand_nested: bool = False) -> list[Layer]
     Args:
         model: keras model to examine.
         expand_nested:
-            bool indicating if all nested models (Sequential or Functional) should be
-            expanded into a single flat list. False matches model.layers behavior.
+            bool indicating if all nested models (Sequential or Functional)
+            should be expanded into a single flat list. False matches
+            model.layers behavior.
 
     Returns:
         List of all layers in the model which have a CrossSim version.
@@ -214,8 +215,9 @@ def analog_layers(model: Layer, expand_nested: bool = False) -> list[Layer]:
     Args:
         model: Keras module to examine.
         expand_nested:
-            bool indicating if all nested models (Sequential or Functional) should be
-            expanded into a single flat list. False matches model.layers behavior.
+            bool indicating if all nested models (Sequential or Functional)
+            should be expanded into a single flat list. False matches
+            model.layers behavior.
 
     Returns:
         List of all layers in the model which use CrossSim.
@@ -238,8 +240,9 @@ def inconvertible_layers(model: Layer, expand_nested: bool = False) -> list[Laye
     Args:
         model: Keras model to examine.
         expand_nested:
-            bool indicating if all nested models (Sequential or Functional) should be
-            expanded into a single flat list. False matches model.layers behavior.
+            bool indicating if all nested models (Sequential or Functional)
+            should be expanded into a single flat list. False matches
+            model.layers behavior.
 
     Returns:
         List of all layers in the model which do not have a CrossSim version.
@@ -257,7 +260,9 @@ def inconvertible_layers(model: Layer, expand_nested: bool = False) -> list[Laye
 
 
 def reinitialize(model: Layer) -> None:
-    """Call reinitialize on all layers. Used to re-sample random conductance errors.
+    """Call reinitialize on all layers.
+
+    Will also resample random conductance errors.
 
     Args:
         model: Keras model to synchronize weights.
@@ -330,8 +335,9 @@ def _convert_sequential_from_keras(model, params, bias_rows, fuse_batchnorm: boo
     for i, layer in enumerate(model.layers):
         if type(layer) in _conversion_map:
             if fuse_batchnorm:
-                # Check to make sure the layer is not the last layer in the sequential
-                # and if its not, check that the following layer is a batchnorm
+                # Check to make sure the layer is not the last layer in the
+                # sequential and if its not, check that the following layer is a
+                # batchnorm
                 if layer is not model.layers[-1] and isinstance(
                     model.layers[i + 1],
                     BatchNormalization,
@@ -373,7 +379,9 @@ def _convert_sequential_from_keras(model, params, bias_rows, fuse_batchnorm: boo
     return new_model
 
 
-def _convert_functional_from_keras(model, params, bias_rows, fuse_batchnorm: bool):
+def _convert_functional_from_keras(  # noqa:C901
+    model, params, bias_rows, fuse_batchnorm: bool
+):
     if len(model.layers) != len(model.operations):
         raise NotImplementedError(
             "Functional models incorporating operations "
@@ -389,7 +397,8 @@ def _convert_functional_from_keras(model, params, bias_rows, fuse_batchnorm: boo
         bn_update_layers = []
         # loop through the input layers of layer
         # if the input layer is a batchnorm layer, get the input layer of the
-        # batchnorm layer so we can update the network_dict to skip the batchnorm
+        # batchnorm layer so we can update the network_dict to skip the
+        # batchnorm
         for i in range(len(network_dict["input_layers_of"][layer.name])):
             if layer.name in layer_names and isinstance(
                 model.get_layer(network_dict["input_layers_of"][layer.name][i]),
@@ -400,13 +409,15 @@ def _convert_functional_from_keras(model, params, bias_rows, fuse_batchnorm: boo
                 bn_update_layers.append(input_layer)
                 change_made = True
             else:
-                # append the non-batchnorm layer to the list in case the next layer is
-                # a batchnorm so when we update the network_dict, this layer isn't lost
+                # append the non-batchnorm layer to the list in case the next
+                # layer is a batchnorm so when we update the network_dict, this
+                # layer isn't lost
                 bn_update_layers.append(network_dict["input_layers_of"][layer.name][i])
 
-        # change_made is true when the input layer of layer is a batchnorm, so update
-        # the network_dict such that the new input layer of layer is the input layer
-        # of the batchnorm layer, essentially jumping over the batchnorm layer
+        # change_made is true when the input layer of layer is a batchnorm, so
+        # update the network_dict such that the new input layer of layer is the
+        # input layer of the batchnorm layer, essentially jumping over the
+        # batchnorm layer
         if change_made and fuse_batchnorm:
             network_dict["input_layers_of"].update({layer.name: bn_update_layers})
 
@@ -423,7 +434,8 @@ def _convert_functional_from_keras(model, params, bias_rows, fuse_batchnorm: boo
                 layer_input = layer_input[0]
 
         x = layer_input
-        # If type of layer is in _conversion_map, replace it with analog conversion
+        # If type of layer is in _conversion_map, replace it with analog
+        # conversion
         if type(layer) in _conversion_map:
             if fuse_batchnorm is True:
                 bn_layer = None
@@ -530,7 +542,8 @@ def _convert_functional_to_keras(model, physical_weights):
                 layer_input = layer_input[0]
 
         x = layer_input
-        # If type of layer is in _conversion_map, replace it with analog conversion
+        # If type of layer is in _conversion_map, replace it with analog
+        # conversion
         if type(layer) in _conversion_map.values():
             physical_weights_ = _val_from_list(physical_weights)
 

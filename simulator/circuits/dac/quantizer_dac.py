@@ -1,6 +1,7 @@
 #
-# Copyright 2017-2023 Sandia Corporation. Under the terms of Contract DE-AC04-94AL85000 with
-# Sandia Corporation, the U.S. Government retains certain rights in this software.
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
+# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+# Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
@@ -12,7 +13,14 @@ xp = ComputeBackend()  # Represents either cupy or numpy
 
 
 class QuantizerDAC(IDAC):
+    """Digital-to-Analog converter that quantizes unsigned values."""
+
     def __init__(self, dac_params, core_params):
+        """Initializes a quantizer DAC.
+
+        Raises:
+            ValueError: Raised on invalid configurations.
+        """
         super().__init__(dac_params, core_params)
         self.levels = 2**self.bits
 
@@ -36,9 +44,25 @@ class QuantizerDAC(IDAC):
             raise ValueError("Quantizer DAC: sign bit disabled but limits are negative")
 
     def set_limits(self, matrix):
+        """Sets the limits of the DAC.
+
+        May depend on the input matrix but not required.
+        """
         pass
 
     def convert(self, vector):
+        """Converts a vector from digital value to analog values.
+
+        Returns a vector converted from one containing digital values to one
+        containing analog values. Converts with respect to the limits set for
+        the dac.
+
+        Args:
+            vector: Vector to be converted.
+
+        Returns:
+            npt.NDArray: Converted vector.
+        """
         # If bits is None, just return the input
         if not self.bits or self.bits == 0:
             return vector
@@ -47,8 +71,9 @@ class QuantizerDAC(IDAC):
         input_ = vector.clip(self.min, self.max)
 
         # Quantize
-        # set qmult (quantization multiplier):  multiply by this factor to convert every level to an absolute range of 1
-        # The -1 is because the first level is 0, i.e. 2 bits define 3 segments between 0 and 3
+        # set qmult (quantization multiplier): multiply by this factor to
+        # convert every level to an absolute range of 1. The -1 is because the
+        # first level is 0, i.e. 2 bits define 3 segments between 0 and 3
         qmult = (self.levels - 1) / (self.max - self.min)
 
         # do quantization using rounding
@@ -61,6 +86,10 @@ class QuantizerDAC(IDAC):
         return input_
 
     def convert_sliced(self, vector, slice_size=None):
+        """Returns an list of vectors corrosponding to analog slices.
+
+        Converts with respect to the limits set for the dac.
+        """
         if slice_size is None:
             slice_size = self.slice_size
 
@@ -69,7 +98,8 @@ class QuantizerDAC(IDAC):
 
         if self.signed:
             raise ValueError(
-                "QuantizerDAC does not support input bit slicing with signed inputs: use SignMagnitudeDAC",
+                "QuantizerDAC does not support input bit slicing with signed "
+                "inputs: use SignMagnitudeDAC",
             )
 
         # First, convert the inputs to integers from 0 to 2^n-1
@@ -77,7 +107,7 @@ class QuantizerDAC(IDAC):
         x_int = xp.rint(vector * (pow(2, magbits) - 1))
 
         sliced_vect = []
-        for k in range(int(xp.ceil(magbits / slice_size))):
+        for _k in range(int(xp.ceil(magbits / slice_size))):
             x_mvm = x_int % slice_multiplier
             sliced_vect.append(x_mvm / slice_divisor)
             x_int = x_int // slice_multiplier
@@ -86,7 +116,14 @@ class QuantizerDAC(IDAC):
 
 
 class SignMagnitudeDAC(QuantizerDAC):
+    """Digital-to-Analog converter that quantizes signed values.
+
+    Raises:
+        ValueError: Raised on invalid configurations.
+    """
+
     def __init__(self, dac_params, core_params):
+        """Initializes a sign magnitude DAC."""
         super().__init__(dac_params, core_params)
 
         # Remove one level to account for signed zero
@@ -97,7 +134,8 @@ class SignMagnitudeDAC(QuantizerDAC):
 
         if not self.signed:
             raise ValueError(
-                "SignMagnitudeDAC must be signed, use QuantizerDAC for unsigned conversions",
+                "SignMagnitudeDAC must be signed, use QuantizerDAC for "
+                "unsigned conversions",
             )
 
         if not self.core_params.percentile and (
@@ -106,9 +144,17 @@ class SignMagnitudeDAC(QuantizerDAC):
             raise ValueError("SignMagnitudeDAC requires a symmetric range about 0")
 
     def set_limits(self, matrix):
+        """Sets the limits of the DAC.
+
+        May depend on the input matrix but not required.
+        """
         pass
 
     def convert_sliced(self, vector, slice_size=None):
+        """Returns an list of vectors corrosponding to analog slices.
+
+        Converts with respect to the limits set for the dac.
+        """
         if slice_size is None:
             slice_size = self.slice_size
 
@@ -122,7 +168,7 @@ class SignMagnitudeDAC(QuantizerDAC):
         x_int = xp.rint(x_mag * (pow(2, magbits) - 1))
 
         sliced_vect = []
-        for k in range(int(xp.ceil(magbits / slice_size))):
+        for _k in range(int(xp.ceil(magbits / slice_size))):
             x_mvm = x_int % slice_multiplier
             if self.signed:
                 x_mvm *= x_sign

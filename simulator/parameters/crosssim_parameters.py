@@ -1,7 +1,7 @@
 #
-# Copyright 2017 National Technology & Engineering Solutions of Sandia, LLC
-# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government
-# retains certain rights in this software.
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
+# (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+# Government retains certain rights in this software.
 #
 # See LICENSE for full license details
 #
@@ -22,7 +22,8 @@ class CrossSimParameters(BaseParameters):
         core (CoreParameters): Parameters that describe the core(s) used in the
             simulation.
         simulation (SimulationParameters): Non-physical simulation parameters
-        xbar (XbarParameters): Parameters that describe the behavior of the crossbar
+        xbar (XbarParameters): Parameters that describe the behavior of the
+        crossbar
     """
 
     core: CoreParameters = None
@@ -30,6 +31,7 @@ class CrossSimParameters(BaseParameters):
     xbar: XbarParameters = None
 
     def validate(self) -> None:
+        """Checks the parameters for invalid settings."""
         super().validate()
         self.core.validate()
         self.simulation.validate()

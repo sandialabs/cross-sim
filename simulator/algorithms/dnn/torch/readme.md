@@ -9,6 +9,12 @@ All implemented layers support adding the bias in either digital or analog by ap
 - Conv1d
 - Conv2d
 - Conv3d
+- RNNCell
+- LSTMCell
+- GRUCell
+- RNN
+- LSTM
+- GRU
 
 In addition to implementation of PyTorch layers, this directory also provides utility functions for converting existing neural networks to use CrossSim equivalent layers and profiling the inputs and outputs of CrossSim layers for neural network calibration (e.g. to calibrate ADC ranges).
 

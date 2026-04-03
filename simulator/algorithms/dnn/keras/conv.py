@@ -1,5 +1,5 @@
 #
-# Copyright 2024 National Technology & Engineering Solutions of Sandia, LLC
+# Copyright 2017-2026 National Technology & Engineering Solutions of Sandia, LLC
 # (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
 # Government retains certain rights in this software.
 #
@@ -8,8 +8,8 @@
 
 """CrossSim version of N-dimensional keras.layers.[Depthwise]Conv[N]D layers.
 
-[Depthwise]AnalogConv[N]D provides a CrossSim-based forward using Analog MVM backed by
-AnalogConvolution.
+[Depthwise]AnalogConv[N]D provides a CrossSim-based forward using Analog MVM
+backed by AnalogConvolution.
 """
 
 from __future__ import annotations
@@ -30,24 +30,24 @@ import numpy.typing as npt
 
 
 class AnalogBaseConv(AnalogLayer):
-    """CrossSim base class for N-dimensional keras.layer.[Depthwise]Conv[N]D layers.
+    """CrossSim base class for N-dimensional keras.layer.[Depthwise]Conv[N]D.
 
     Implementing classes must declare the following attributes:
         core_func:
             A class which will be used to implement self.core. Typically
             AnalogConvolution[N]d
         _pre_call_input_order:
-            Tuple of dimension orders to convert inputs from keras specified order into
-            order expected by core_func call
+            Tuple of dimension orders to convert inputs from keras specified
+            order into order expected by core_func call
         _post_call_output_order:
-            Tuple of dimension orders to put outputs from core_func call into keras
-            specified order
+            Tuple of dimension orders to put outputs from core_func call into
+            keras specified order
         _weight_order:
-            Tuple of dimension orders to convert weight matrix from keras specified
-            order into order expected by core_func form_matrix
+            Tuple of dimension orders to convert weight matrix from keras
+            specified order into order expected by core_func form_matrix
         _get_core_weight_order:
-            Tuple of dimension orders to convert weights from core_func matrix order
-            into keras specified order for get_core_weights function
+            Tuple of dimension orders to convert weights from core_func matrix
+            order into keras specified order for get_core_weights function
 
     See AnalogLayer for description of CrossSim-specific documentation.
     See keras.layer.[Depthwise]Conv[N]D for layer functionality documentation.
@@ -106,10 +106,10 @@ class AnalogBaseConv(AnalogLayer):
             input_ = ops.pad(input_, [(0, 0), (0, 0), *pad_width])
 
         # Purely CPU implementations of keras (when no GPU is avaliable)
-        # cause a pointer misalignment when using dlpack, so only use dlpack for when
-        # part of the application is resident on the GPU. Additionally because Keras
-        # uses a non-default stream for gpu operations an explicit stream synchronize
-        # is required to avoid a race condition.
+        # cause a pointer misalignment when using dlpack, so only use dlpack for
+        # when  part of the application is resident on the GPU. Additionally
+        # because Keras uses a non-default stream for gpu operations an explicit
+        # stream synchronize is required to avoid a race condition.
         out = self.core.apply(input_)
         if self.useGPU:
             out = from_dlpack(out.toDlpack())
@@ -149,7 +149,8 @@ class AnalogBaseConv(AnalogLayer):
         """Gets the weight and bias values with errors applied.
 
         Returns:
-            List of numpy arrays with errors applied. CrossSim version of get_weights
+            List of numpy arrays with errors applied. CrossSim version of
+            get_weights
         """
         weight, bias = self.core.get_core_weights()
         weight = weight.transpose(self._get_core_weight_order)
@@ -179,7 +180,7 @@ class AnalogBaseConv(AnalogLayer):
         self.core.set_matrix(self.form_matrix())
 
     def _conv_dict(self) -> dict[str, int | tuple[int, ...]]:
-        """Maps keras attribute names to the arguments expected by AnalogConvolution."""
+        """Maps keras attributes to arguments expected by AnalogConvolution."""
         d = {
             "params": self.params,
             "Nic": self.input_spec.axes[-1]
@@ -197,20 +198,21 @@ class AnalogBaseConv(AnalogLayer):
 
 
 class AnalogDepthwiseConv(AnalogBaseConv):
-    """CrossSim base class for N-dimensional keras.layer.DepthwiseConv[N]D layers.
+    """CrossSim base class for N-dimensional keras.layer.DepthwiseConv[N]D.
 
-    Keras depthwise convolutions have some small shape and attribute differences vs
-    conventional convolution layers. This handles the differences, all CrossSim-specific
-    attributes and methods are the same as AnalogBaseConv.
+    Keras depthwise convolutions have some small shape and attribute differences
+    vs conventional convolution layers. This handles the differences, all
+    CrossSim-specific attributes and methods are the same as AnalogBaseConv.
 
     """
 
     def form_matrix(self) -> npt.NDArray:
         """Builds 2D weight matrix for programming into the array.
 
-        Matrix formation is deferred to the internal AnalogConvolution. DepthwiseConvs
-        use a different shape convention than standard convolutions so additional
-        reshaping is needed to make compatible with AnalogConvolution asusmptions.
+        Matrix formation is deferred to the internal AnalogConvolution.
+        DepthwiseConvs use a different shape convention than standard
+        convolutions so additional reshaping is needed to make compatible with
+        AnalogConvolution asusmptions.
 
         Returns:
             2D Numpy Array of the matrix including analog bias if using.
@@ -229,7 +231,8 @@ class AnalogDepthwiseConv(AnalogBaseConv):
         """Gets the weight and bias values with errors applied.
 
         Returns:
-            List of numpy arrays with errors applied. CrossSim version of get_weights.
+            List of numpy arrays with errors applied. CrossSim version of
+            get_weights.
         """
         weight, bias = self.core.get_core_weights()
 
@@ -244,7 +247,7 @@ class AnalogDepthwiseConv(AnalogBaseConv):
             return [weight]
 
     def _conv_dict(self) -> dict[str, int | tuple[int, ...]]:
-        """Maps keras attribute names to the arguments expected by AnalogConvolution."""
+        """Maps keras attributes to arguments expected by AnalogConvolution."""
         Nic = (
             self.input_spec.axes[-1]
             if self.data_format == "channels_last"
