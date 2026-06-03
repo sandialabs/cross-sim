@@ -46,12 +46,6 @@ class SarADC(IADC):
         # SAR ADC parameters
         self.sar_params = self.adc_params
 
-        # SW packing
-        Ncopy = (
-            self.simulation_params.convolution.x_par
-            * self.simulation_params.convolution.y_par
-        )
-
         # Set the reference voltage (normalized)
         self.Vref = xp.maximum(xp.abs(self.min), xp.abs(self.max))
 
@@ -203,12 +197,6 @@ class SarADC(IADC):
         )
         comparator_offsets = xp.repeat(comparator_offsets, group_size, axis=0)
         self.comparator_offsets = comparator_offsets[: matrix.shape[0]]
-
-        if Ncopy > 1:
-            x_par = self.simulation_params.convolution.x_par
-            y_par = self.simulation_params.convolution.y_par
-            self.dac_levels_all = xp.tile(self.dac_levels_all, (x_par * y_par, 1))
-            self.comparator_offsets = xp.tile(self.comparator_offsets, x_par * y_par)
 
         # Pre-computation of indexing matrix
         if self.simulation_params.fast_matmul:

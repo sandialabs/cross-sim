@@ -958,58 +958,6 @@ class AnalogCore:
             else:
                 return self.rmatmat(x)
 
-    def mat_multivec(self, vec: npt.ArrayLike) -> npt.NDArray:
-        """Perform matrix-vector multiply on multiple analog vectors packed into
-        the "vec" object. A single MVM op in the simulation models multiple MVMs
-        in the physical hardware.
-
-        The "vec" object will be reshaped into the following 2D shape:
-        (Ncopy, N) where Ncopy is the number of input vectors packed into the
-        MVM simulation and N is the length of a single input vector
-        """
-        vec = self._ensure_data_format(vec)
-
-        if self.complex_valued:
-            raise NotImplementedError(
-                "MVM packing not supported for complex-valued MVMs",
-            )
-
-        # For consistency use run_xbar_mvm for both single and multiple cores
-        # This means functions using mat_multivec can't use input scaling but
-        # this is currently used exclusively for convolution which isn't user
-        # facing.
-        if self.Ncores == 1:
-            return self.cores[0][0].run_xbar_mvm(vec.flatten())
-
-        else:
-            Ncopy = (
-                self.params.simulation.convolution.x_par
-                * self.params.simulation.convolution.y_par
-            )
-            if vec.size != Ncopy * self.ncol:
-                raise ValueError("Packed vector size incompatible with core parameters")
-            if vec.shape != (Ncopy, self.ncol):
-                vec = vec.reshape((Ncopy, self.ncol))
-
-            output = xp.zeros((Ncopy, self.nrow))
-            for i in range(self.num_cores_col):
-                output_i = xp.zeros((Ncopy, self.nrow))
-                i_start = np.sum(self.NcolsVec[:i]).astype(int)
-                i_end = np.sum(self.NcolsVec[: i + 1]).astype(int)
-                vec_i = vec[:, i_start:i_end].flatten()
-                for j in range(self.num_cores_row):
-                    j_start = int(np.sum(self.NrowsVec[:j]))
-                    j_end = int(np.sum(self.NrowsVec[: j + 1]))
-                    output_ij = self.cores[j][i].run_xbar_mvm(vec_i.copy())
-                    output_i[:, j_start:j_end] = output_ij.reshape(
-                        (Ncopy, j_start - j_end),
-                    )
-                output += output_i
-            return self._convert_output_type(
-                output.flatten(),
-                self.output_type(vec.dtype),
-            )
-
     def transpose(self) -> AnalogCore:
         """Returns an object for the transpose of the core."""
         return TransposedCore(parent=self)

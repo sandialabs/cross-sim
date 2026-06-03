@@ -49,8 +49,13 @@ class Device(IDevice):
         self._nonlinear_IV_model = nonlinear_IV_model
 
     def read_noise(self, input_, mask=None):
-        """Returns a version of a matrix after reading."""
-        if self.device_params.read_noise.enable:
+        """Returns a version of a matrix after reading.
+        If lumped read noise is enabled, read noise is not applied here.
+        """
+        if (
+            self.device_params.read_noise.enable
+            and not self.device_params.read_noise.lumped
+        ):
             noisy_matrix = self._read_noise_model.read_noise(input_.copy())
             return self.clip_and_mask(noisy_matrix, mask)
         else:
@@ -96,6 +101,20 @@ class Device(IDevice):
             return self._nonlinear_IV_model.nonlinear_current_sum(Gmat, Vterm)
         else:
             return xp.matmul(Gmat, Vterm)
+
+    def read_noise_variance(self, input_, mask=None):
+        """Returns the variance in the conductance of every element
+        of the array.
+        """
+        if self.device_params.read_noise.enable:
+            noise_var = self._read_noise_model.read_noise_variance(input_.copy())
+            if mask is not None:
+                noise_var *= mask
+            return noise_var
+        else:
+            raise ValueError(
+                "Cannot compute read noise variance if read_noise is disabled."
+            )
 
     def clip_and_mask(self, input_, mask):
         """Applies clipping and masking to the conductance matrix."""

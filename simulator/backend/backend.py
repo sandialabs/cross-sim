@@ -81,25 +81,26 @@ class ComputeBackend:
 
     @property
     def backend(self):
-        """Returns the backend that is currently being used.
+        """The compute module used by the backend.
 
-        If use_gpu was set True, then the cupy module is returned
-        If use_gpu was sest False, numpy is returned.
-        Otherwise, None is returned.
-
-        Returns:
-            Returns the module used by the backend to perform computations.
-            If the backend has not been configured, then None is returned.
+        When configured with ``use_gpu=False``, ``numpy`` is returned
+        When configured with ``use_gpu=True``, ``cupy`` is returned
+        If neither has been set, ``use_gpu=None``, None is returned
         """
         return self._backend
 
     @property
     def use_gpu(self):
-        """Returns what the current gpu setting is."""
+        """Determines whether a GPU backend should be used.
+
+        When configured with ``use_gpu=False``, ``numpy`` is used
+        When configured with ``use_gpu=True``, ``cupy`` is used
+        """
         return self._use_gpu
 
-    def __getattr__(self, name):
-        """Returns the attribute of the same name from the backend module.
+    def __getattr__(self, name: str):
+        """Returns the value for the attribute of the same name on the backend
+        module.
 
         Args:
             name: Attribute to select
@@ -111,6 +112,9 @@ class ComputeBackend:
             ValueError: Raised if ComputeBackend was never initialized
                 using 'use_gpu'
         """
+        if name.startswith("__") and name.endswith("__"):
+            return object.__getattribute__(self, name)
+
         if self._backend is None:
             raise ValueError(
                 "Backend never initialized, ensure the option 'use_gpu' was set "

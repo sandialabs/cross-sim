@@ -99,7 +99,7 @@ class DeviceParameters(BaseParameters):
     time: int | float = 0
     infinite_on_off_ratio: bool = False
     clip_conductance: bool = False
-    read_noise: WeightErrorParameters = None
+    read_noise: ReadNoiseParameters = None
     programming_error: WeightErrorParameters = None
     drift_error: WeightErrorParameters = None
     nonlinear_IV: WeightErrorParameters = None
@@ -463,6 +463,27 @@ class WeightErrorParameters(BaseParameters):
     enable: bool = False
     model: str = "IdealDevice"
     magnitude: float = 0
+
+
+@dataclass(repr=False)
+class ReadNoiseParameters(WeightErrorParameters):
+    """Parameters specific to read noise.
+
+    Attributes:
+        lumped (bool): If read_noise is enabled, this will enable a fast,
+            approximate simulation mode for device read noise. Instead of
+            randomly sampling the noise on every device, the statistics of the
+            accumulated read noise on the dot product current will be
+            calculated, then only the noise on the dot product will be sampled.
+            The dot product noise is sampled from a normal distribution,
+            consistent with the central limit theorem. The noise is then added
+            to the dot products.
+            **NOTE: This setting can be enabled along with parasitic resistance
+                or nonlinear I-V, but lumped read noise assumes a linear MVM, so
+                it becomes even more of an approximation with these settings.
+    """
+
+    lumped: bool = False
 
 
 @dataclass(repr=False)

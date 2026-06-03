@@ -143,6 +143,21 @@ class IDevice(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def read_noise_variance(self, input_):
+        """Returns the variance in the conductance of every element of the
+        array.
+
+        Read noise represents error associated with the device conductances
+        (the weights in the matrix) at the time of the MVM (e.g., the
+        temperature could effect the conductance).
+
+        This function should return the variance of the read noise at every
+        device, without sampling the noise. This is used by the
+        lumped_read_noise option.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def nonlinear_current_sum(self, Gmat, Vterm):
         """Returns the current sums accounting for I-V nonlinearity.
 
@@ -220,6 +235,14 @@ class EmptyDevice(IDevice):
             "params.simulation.disable_fast_nonlinear_IV = True.",
         )
 
+    def read_noise_variance(self, input_):
+        """Returns the variance in the conductance of every element
+        of the array.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} has not implemented read noise variance",
+        )
+
 
 # Ideal device
 class IdealDevice(IDevice):
@@ -248,3 +271,9 @@ class IdealDevice(IDevice):
     def nonlinear_current_sum(self, Gmat, Vterm):
         """Returns the current sums with ideal cells."""
         return xp.matmul(Gmat, Vterm)
+
+    def read_noise_variance(self, input_):
+        """Returns the variance in the conductance of every element
+        of the array.
+        """
+        return xp.zeros(input_.shape)

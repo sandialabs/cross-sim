@@ -251,58 +251,33 @@ class OffsetCore(WrapperCore):
         if self.digital_offset:
             # Subtract bias offset
             half = self.Gmin_norm + 0.5 * self.Wrange_xbar
-            if (
-                self.params.simulation.convolution.x_par > 1
-                or self.params.simulation.convolution.y_par > 1
-            ):
-                x_par = self.params.simulation.convolution.x_par
-                y_par = self.params.simulation.convolution.y_par
-                Noutputs = self.W_shape[0]
-                x_reshape = vector.reshape(
-                    (x_par * y_par, len(vector) // (x_par * y_par)),
-                )
-                offset = half * xp.sum(x_reshape, axis=1)
-                offset = xp.repeat(offset, Noutputs)
-                output -= offset
+            if len(vector.shape) == 1:
+                output -= half * xp.sum(vector)
             else:
-                if len(vector.shape) == 1:
-                    output -= half * xp.sum(vector)
-                else:
-                    if op == "mvm":
-                        if len(vector.shape) == 3:
-                            output -= half * xp.sum(vector, axis=1)[:, None, :]
-                        else:
-                            output -= half * xp.sum(vector, axis=0)
+                if op == "mvm":
+                    if len(vector.shape) == 3:
+                        output -= half * xp.sum(vector, axis=1)[:, None, :]
                     else:
-                        if len(vector.shape) == 3:
-                            output -= half * xp.sum(vector, axis=2)[:, :, None]
-                        else:
-                            output -= half * xp.sum(vector, axis=1)[:, None]
+                        output -= half * xp.sum(vector, axis=0)
+                else:
+                    if len(vector.shape) == 3:
+                        output -= half * xp.sum(vector, axis=2)[:, :, None]
+                    else:
+                        output -= half * xp.sum(vector, axis=1)[:, None]
         else:
-            if (
-                self.params.simulation.convolution.x_par > 1
-                or self.params.simulation.convolution.y_par > 1
-            ):
-                x_par = self.params.simulation.convolution.x_par
-                y_par = self.params.simulation.convolution.y_par
-                output = output.reshape((x_par * y_par, len(output) // (x_par * y_par)))
-                for m in range(x_par * y_par):
-                    output[m, 1:] = output[m, 1:] - output[m, 0]
-                output = output[:, 1:].flatten()
+            if len(vector.shape) == 1:
+                output = output[1:] - output[0]
             else:
-                if len(vector.shape) == 1:
-                    output = output[1:] - output[0]
+                if op == "mvm":
+                    if len(output.shape) == 3:
+                        output = output[:, 1:, :] - output[:, 0, :][:, None, :]
+                    elif len(output.shape) < 3:
+                        output = output[1:, :] - output[0, :]
                 else:
-                    if op == "mvm":
-                        if len(output.shape) == 3:
-                            output = output[:, 1:, :] - output[:, 0, :][:, None, :]
-                        elif len(output.shape) < 3:
-                            output = output[1:, :] - output[0, :]
-                    else:
-                        if len(output.shape) == 3:
-                            output = output[:, :, 1:] - output[:, :, 0][:, :, None]
-                        elif len(output.shape) < 3:
-                            output = output[:, 1:] - output[:, 0]
+                    if len(output.shape) == 3:
+                        output = output[:, :, 1:] - output[:, :, 0][:, :, None]
+                    elif len(output.shape) < 3:
+                        output = output[:, 1:] - output[:, 0]
 
         return output
 
@@ -318,9 +293,6 @@ class OffsetCore(WrapperCore):
         else:
             output = (output - self.Gmin_norm) / self.Wrange_xbar - 0.5
 
-        # Unexpand the matrix
-        if self.params.simulation.disable_fast_matmul:
-            output = output[: self.W_shape[0], : self.W_shape[1]]
         output *= 2 * self.max
         return output
 
@@ -330,14 +302,3 @@ class OffsetCore(WrapperCore):
 
     def _wrapper_restore_matrix(self, matrix):
         return self.core._restore_matrix(matrix)
-
-    def expand_matrix(self, Ncopy):
-        """Expands the matrix to allow for parallel simulation."""
-        # Calls expand_matrix in the inner cores
-        # Makes multiple copies of matrix to compute multiple MVMs in parallel
-        self.core.expand_matrix(Ncopy)
-
-    def unexpand_matrix(self):
-        """Undoes the expand_matrix operation. Forms a single matrix."""
-        # Calls unexpand_matrix in the inner cores
-        self.core.unexpand_matrix()

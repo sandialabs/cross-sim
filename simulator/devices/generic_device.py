@@ -102,14 +102,10 @@ class Inverse(AbstractScalar):
 
     def scale_and_add(self, random_matrix, input_matrix):
         """Apply an error that scales inversely with conductance."""
-        signs = xp.backend.sign(input_matrix)
-        magnitudes = xp.backend.abs(input_matrix)
-
-        def inverse_func(x):
-            return 1 / x if x > 0 else 0
-
-        scaled_magnitudes = xp.backend.vectorize(inverse_func)(magnitudes)
-        scaled_random_matrix = random_matrix * scaled_magnitudes * signs
+        magnitudes = xp.abs(input_matrix)
+        inverses = xp.sign(input_matrix) / magnitudes
+        inverses[magnitudes == 0] = 0
+        scaled_random_matrix = random_matrix * inverses
         return input_matrix + scaled_random_matrix
 
 
@@ -150,12 +146,20 @@ class NormalIndependentDevice(GenericDevice):
     distribution_type = NormalError
     scalar_type = Independent
 
+    def read_noise_variance(self, matrix):
+        """Create an array of error variances."""
+        return (self.magnitude**2) * xp.ones(matrix.shape)
+
 
 class NormalProportionalDevice(GenericDevice):
     """A device with proportional error and a normal distribution."""
 
     distribution_type = NormalError
     scalar_type = Proportional
+
+    def read_noise_variance(self, matrix):
+        """Create an array of error variances."""
+        return (self.magnitude * matrix) ** 2
 
 
 class NormalInverseProportionalDevice(GenericDevice):
@@ -164,12 +168,25 @@ class NormalInverseProportionalDevice(GenericDevice):
     distribution_type = NormalError
     scalar_type = Inverse
 
+    def read_noise_variance(self, matrix):
+        """Create an array of error variances."""
+        G_magnitudes = xp.abs(matrix)
+        G_inverses = xp.sign(matrix) / G_magnitudes
+        G_inverses[G_magnitudes == 0] = 0
+        return (self.magnitude * G_inverses) ** 2
+
 
 class UniformIndependentDevice(GenericDevice):
     """A device with state independent error and a uniform distribution."""
 
     distribution_type = UniformError
     scalar_type = Independent
+
+    def read_noise_variance(self, matrix):
+        """Create an array of error variances. The variance of a uniform
+        distribution with extent D is D^2/12.
+        """
+        return (self.magnitude**2 / 12) * xp.ones(matrix.shape)
 
 
 class UniformProportionalDevice(GenericDevice):
@@ -178,9 +195,20 @@ class UniformProportionalDevice(GenericDevice):
     distribution_type = UniformError
     scalar_type = Proportional
 
+    def read_noise_variance(self, matrix):
+        """Create an array of error variances."""
+        return ((self.magnitude * matrix) ** 2) / 12
+
 
 class UniformInverseProportionalDevice(GenericDevice):
     """A device with inversely proportional error and a uniform distribution."""
 
     distribution_type = UniformError
     scalar_type = Inverse
+
+    def read_noise_variance(self, matrix):
+        """Create an array of error variances."""
+        G_magnitudes = xp.abs(matrix)
+        G_inverses = xp.sign(matrix) / G_magnitudes
+        G_inverses[G_magnitudes == 0] = 0
+        return (self.magnitude * G_inverses) ** 2 / 12

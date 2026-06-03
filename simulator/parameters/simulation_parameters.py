@@ -129,14 +129,10 @@ class ConvolutionParameters(BaseParameters):
 
     Attributes:
         is_conv_core (bool): Flag to mark core as a convolution core
-        x_par (int): Number of sliding window in x to pack into one MVM
-        y_par (int): Number of sliding window in y to pack into one MVM
         Nwindows (int): Total number of sliding windows per CNN input example
     """
 
     is_conv_core: bool = False
-    x_par: int = 1
-    y_par: int = 1
     Nwindows: int = 1
 
 

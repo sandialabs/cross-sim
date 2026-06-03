@@ -49,8 +49,6 @@
     "simulation": {
         "convolution": {
             "is_conv_core": false,
-            "x_par": 1,
-            "y_par": 1,
             "Nwindows": 1
         },
         "analytics": {

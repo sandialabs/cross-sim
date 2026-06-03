@@ -32,7 +32,6 @@ class IArray(ABC):
         self.Rp_col_terminal_norm = params.xbar.array.parasitics.Rp_col_terminal_norm
 
         # Simulation settings
-        self.useMask = False
         self.fast_matmul = params.simulation.fast_matmul
         self.Niters_max = params.simulation.Niters_max_parasitics
         self.Verr_th = params.simulation.Verr_th_mvm
@@ -213,10 +212,7 @@ class IArray(ABC):
                 elif self.Verr_matmul_criterion == "max_min":
                     Verr = xp.min(xp.max(xp.abs(VerrMat_pos), axis=(0, 1)))
             else:
-                if self.useMask:
-                    Verr = xp.max(xp.abs(VerrMat_pos * self.mask))
-                else:
-                    Verr = xp.max(xp.abs(VerrMat_pos))
+                Verr = xp.max(xp.abs(VerrMat_pos))
         else:
             if self.fast_matmul:
                 if self.Verr_matmul_criterion == "max_max":
@@ -240,15 +236,7 @@ class IArray(ABC):
                         )
                     )
             else:
-                if self.useMask:
-                    Verr = 0.5 * (
-                        xp.max(xp.abs(VerrMat_pos * self.mask))
-                        + xp.max(xp.abs(VerrMat_neg * self.mask))
-                    )
-                else:
-                    Verr = 0.5 * (
-                        xp.max(xp.abs(VerrMat_pos)) + xp.max(xp.abs(VerrMat_neg))
-                    )
+                Verr = 0.5 * (xp.max(xp.abs(VerrMat_pos)) + xp.max(xp.abs(VerrMat_neg)))
 
         return Verr
 
@@ -271,23 +259,3 @@ class IArray(ABC):
         if xp.isnan(Icols).any():
             raise RuntimeError("Nans due to parasitic resistance simulation")
         return Icols
-
-    def _create_parasitics_mask(
-        self,
-        matrix: npt.NDArray,
-        Ncopy: int,
-    ) -> npt.NDArray:
-        """Create a mask for parasitic simulations with sliding window packing.
-
-        matrix: the array whose shape and dtype will be used to construct the
-            parasitics mask.
-        """
-        if Ncopy > 1:
-            Nx, Ny = matrix.shape
-            self.mask = xp.zeros((Ncopy * Nx, Ncopy * Ny), dtype=matrix.dtype)
-            for m in range(Ncopy):
-                x_start, x_end = m * Nx, (m + 1) * Nx
-                y_start, y_end = m * Ny, (m + 1) * Ny
-                self.mask[x_start:x_end, y_start:y_end] = 1
-            self.mask = self.mask > 1e-9
-            self.useMask = True

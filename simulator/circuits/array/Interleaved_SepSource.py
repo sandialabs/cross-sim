@@ -128,10 +128,6 @@ class InterleavedSeparateSourceArray(IArray):
             Isum_col = xp.cumsum(Ires, 1)
             Isum_pos = xp.cumsum(Ires_pos[:, ::-1], 1)[:, ::-1]
             Isum_neg = xp.cumsum(Ires_neg[:, ::-1], 1)[:, ::-1]
-            if self.useMask:
-                Isum_col *= self.mask
-                Isum_pos *= self.mask
-                Isum_neg *= self.mask
 
             if len(Isum_col.shape) == 4:
                 Vdrops_col = xp.cumsum(

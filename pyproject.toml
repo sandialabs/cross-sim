@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "CrossSim"
 description = "Accuracy simulator for analog in-memory computing"
-version = "3.2.0"
+version = "3.2.1"
 license = {text = "BSD 3-Clause License"}
 dependencies = [
     "numpy",
@@ -30,6 +30,9 @@ dev = [
     "mypy", 
     "sphinx", 
     "sphinx-rtd-theme",
+    "sphinx_design",
+    "sphinxcontrib-bibtex",
+    "sphinx-autobuild>=2025.8.25",
     "myst-parser",
 ]
 
@@ -154,3 +157,4 @@ module = [
     "scipy.*"
 ]
 ignore_missing_imports = true
+

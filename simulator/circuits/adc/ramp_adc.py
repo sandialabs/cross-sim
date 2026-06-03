@@ -41,10 +41,6 @@ class RampADC(IADC):
         gain_db = self.ramp_params.gain_db
         sigma_capacitor = self.ramp_params.sigma_capacitor
         sigma_comparator = self.ramp_params.sigma_comparator * self.Vref
-        Ncopy = (
-            self.simulation_params.convolution.x_par
-            * self.simulation_params.convolution.y_par
-        )
 
         # Generate random comparator offsets
         self.comparator_offsets = xp.random.normal(
@@ -52,8 +48,6 @@ class RampADC(IADC):
             scale=sigma_comparator,
             size=matrix.shape[0],
         )
-        if Ncopy > 1:
-            self.comparator_offsets = xp.tile(self.comparator_offsets, Ncopy)
 
         # Draw random capacitor mismatches
         cap_mismatches = xp.random.normal(

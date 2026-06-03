@@ -8,7 +8,7 @@
 
 from abc import ABCMeta
 from . import ICore
-from simulator.parameters.core_parameters import CoreStyle
+from simulator.parameters.core_parameters import CoreStyle, BitSlicedCoreStyle
 from simulator.devices.device import Device
 from simulator.circuits.array import (
     NoninterleavedInputSourceArray,
@@ -43,19 +43,16 @@ class NumericCore(ICore, metaclass=ABCMeta):
         # ADC belongs to wrapper core
         self.device = Device.create_device(params.xbar.device)
 
-        if self.params.core.style != CoreStyle.OFFSET:
+        if self.params.core.style != CoreStyle.OFFSET and not (
+            self.params.core.style == CoreStyle.BITSLICED
+            and self.params.core.bit_sliced.style == BitSlicedCoreStyle.OFFSET
+        ):
             self.interleaved = self.params.core.balanced.interleaved_posneg
         else:
             self.interleaved = False
         self.current_from_input = self.params.xbar.array.parasitics.current_from_input
+        self.read_noise_params = self.params.xbar.device.read_noise
 
-        if self.params.simulation.fast_matmul:
-            self.Ncopy = 1
-        else:
-            self.Ncopy = (
-                self.params.simulation.convolution.x_par
-                * self.params.simulation.convolution.y_par
-            )
         self.simulate_parasitics = self.params.xbar.array.parasitics.enable and (
             self.params.xbar.array.parasitics.Rp_row > 0
             or self.params.xbar.array.parasitics.Rp_col > 0
@@ -129,6 +126,10 @@ class NumericCore(ICore, metaclass=ABCMeta):
             self.matrix = matrix_copy
             self.matrix[error_mask] = matrix_error[error_mask]
 
+        # If using lumped read noise, compute the noise variance matrix here
+        if self.read_noise_params.enable and self.read_noise_params.lumped:
+            self.noise_var_matrix = self.device.read_noise_variance(self.matrix)
+
     def set_vmm_inputs(self, vector):
         """Sets the inputs that will be used in vector matrix multiplication.
 
@@ -167,10 +168,11 @@ class NumericCore(ICore, metaclass=ABCMeta):
 
         # Apply read noise (unique noise on each call)
         matrix = self.read_noise_matrix(vector=vector, row_in=row_in)
-        if self.interleaved:
+        matrix_neg, noise_var_neg = None, None
+        if core_neg is not None:
             matrix_neg = core_neg.read_noise_matrix(vector=vector, row_in=row_in)
-        else:
-            matrix_neg = None
+            if self.read_noise_params.enable and self.read_noise_params.lumped:
+                noise_var_neg = core_neg.noise_var_matrix
 
         circuit_solver = self.circuit_solver_vmm
         op_pair = (vector, matrix)
@@ -182,6 +184,7 @@ class NumericCore(ICore, metaclass=ABCMeta):
             circuit_solver,
             row_in,
             matrix_neg,
+            noise_var_neg,
         )
 
     def run_xbar_mvm(
@@ -206,10 +209,11 @@ class NumericCore(ICore, metaclass=ABCMeta):
 
         # Apply read noise (unique noise on each call)
         matrix = self.read_noise_matrix(vector=vector, row_in=row_in)
-        if self.interleaved:
+        matrix_neg, noise_var_neg = None, None
+        if core_neg is not None:
             matrix_neg = core_neg.read_noise_matrix(vector=vector, row_in=row_in)
-        else:
-            matrix_neg = None
+            if self.read_noise_params.enable and self.read_noise_params.lumped:
+                noise_var_neg = core_neg.noise_var_matrix
 
         circuit_solver = self.circuit_solver_mvm
         op_pair = (matrix, vector)
@@ -221,6 +225,7 @@ class NumericCore(ICore, metaclass=ABCMeta):
             circuit_solver,
             row_in,
             matrix_neg,
+            noise_var_neg,
         )
 
     def run_xbar_operation(  # noqa:C901
@@ -231,6 +236,7 @@ class NumericCore(ICore, metaclass=ABCMeta):
         circuit_solver,
         row_in,
         matrix_neg,
+        noise_var_neg,
     ):
         """A generalized functino to perform cross bar multiplications."""
         input_dim = len(vector.shape)
@@ -238,12 +244,6 @@ class NumericCore(ICore, metaclass=ABCMeta):
         if (
             self.simulate_parasitics or self.params.xbar.device.nonlinear_IV.enable
         ) and vector.any():
-            # Only create parasitics mask as needed, to avoid unnecessary
-            # storage of the VMM mask if only the MVM mask is needed, and vice
-            # versa
-            if self.Ncopy > 1 and not circuit_solver.useMask:
-                circuit_solver._create_parasitics_mask(self.matrix_original, self.Ncopy)
-
             result = circuit_solver.iterative_solve(
                 matrix.copy(),
                 vector,
@@ -294,6 +294,9 @@ class NumericCore(ICore, metaclass=ABCMeta):
                 # Compute using matrix vector dot product
                 result = xp.matmul(*op_pair)
 
+        # Apply lumped read noise
+        result = self.apply_lumped_read_noise(vector, result, noise_var_neg)
+
         return result
 
     def _read_matrix(self):
@@ -310,110 +313,72 @@ class NumericCore(ICore, metaclass=ABCMeta):
 
         This accounts for whether the matrix inclues replicated weights.
         """
-        if self.Ncopy == 1:
-            # If input is 1D, just apply read noise to the conductance matrix
-            if (
-                len(vector.shape) == 1
-                or not self.params.xbar.device.read_noise.enable
-                or self.params.xbar.device.read_noise.model == "IdealDevice"
-            ):
-                return self.device.read_noise(self.matrix.copy())
+        # If input is 1D, just apply read noise to the conductance matrix.
+        # Also use this path if read noise is off or lumped read noise is used.
+        if (
+            len(vector.shape) == 1
+            or not self.read_noise_params.enable
+            or self.read_noise_params.model == "IdealDevice"
+            or self.read_noise_params.lumped
+        ):
+            return self.device.read_noise(self.matrix.copy())
 
-            # Batched read noise mode (used only if fast_matmul = True)
-            # If input is 2D or 3D, make a copy of the conductance matrix for
-            # each MVM so that read noise can be applied independently (but
-            # sampled in parallel) for each MVM
-            # The resulting 4D matrix has the same shape as the matrix that
-            # would otherwise be created in the parasitics solver, so the
-            # replicated and noised matrix can be passed directly into the
-            # parasitics solver
+        # Batched read noise mode (used only if fast_matmul = True)
+        # If input is 2D or 3D, make a copy of the conductance matrix for
+        # each MVM so that read noise can be applied independently (but
+        # sampled in parallel) for each MVM
+        # The resulting 4D matrix has the same shape as the matrix that
+        # would otherwise be created in the parasitics solver, so the
+        # replicated and noised matrix can be passed directly into the
+        # parasitics solver
+        else:
+            if len(vector.shape) == 2:
+                input_index = 1 if row_in else 0
+                expanded_matrix = xp.tile(
+                    self.matrix[:, :, None], (1, 1, vector.shape[input_index])
+                )[:, :, xp.newaxis, :]
             else:
-                if len(vector.shape) == 2:
-                    input_index = 1 if row_in else 0
+                if row_in:
                     expanded_matrix = xp.tile(
-                        self.matrix[:, :, None], (1, 1, vector.shape[input_index])
-                    )[:, :, xp.newaxis, :]
+                        self.matrix[:, :, None, None],
+                        (1, 1, vector.shape[2], vector.shape[0]),
+                    )
                 else:
-                    if row_in:
-                        expanded_matrix = xp.tile(
-                            self.matrix[:, :, None, None],
-                            (1, 1, vector.shape[2], vector.shape[0]),
-                        )
-                    else:
-                        expanded_matrix = xp.tile(
-                            (self.matrix.T)[:, :, None, None],
-                            (1, 1, vector.shape[1], vector.shape[0]),
-                        )
-                return self.device.read_noise(expanded_matrix)
+                    expanded_matrix = xp.tile(
+                        (self.matrix.T)[:, :, None, None],
+                        (1, 1, vector.shape[1], vector.shape[0]),
+                    )
+            return self.device.read_noise(expanded_matrix)
 
-        # If doing a circuit simulation, must keep the full sized block diagonal
-        #  matrix
-        elif self.Ncopy > 1 and self.simulate_parasitics:
-            noisy_matrix = self.device.read_noise(self.matrix.copy())
-            circuit_solver = (
-                self.circuit_solver_mvm if row_in else self.circuit_solver_vmm
-            )
-            if not circuit_solver.useMask:
-                circuit_solver._create_parasitics_mask(self.matrix_original, self.Ncopy)
-            noisy_matrix *= circuit_solver.mask
+    def apply_lumped_read_noise(self, vector, output, noise_var_neg) -> npt.NDArray:
+        """Applies lumped read noise on an array of dot products.
 
-        # If not parasitic and Ncopy > 1
-        else:
-            if not self.params.xbar.device.read_noise.enable:
-                return self.matrix
-            else:
-                noisy_matrix = self.device.read_noise(self.matrix_dense.copy())
-                Nx, Ny = self.matrix_original.shape
-                for m in range(self.Ncopy):
-                    x_start, y_start = m * Nx, m * Ny
-                    x_end, y_end = x_start + Nx, y_start + Ny
-                    self.matrix[x_start:x_end, y_start:y_end] = noisy_matrix[m, :, :]
-                noisy_matrix = self.matrix
+        Args:
+            vector: Inputs to the MVM or VMM
+            output: Dot product outputs of the MVM or VMM without read noise
+            noise_var_neg: Matrix of read noise variances for the negative
+                weights core, if interleaved_posneg=True.
 
-        return noisy_matrix
-
-    def expand_matrix(self, Ncopy):
-        """Makes a big matrix containing M copies of the weight matrix.
-
-        This allowst multiple VMMs can be computed in parallel, SIMD style
-        Off-diagonal blocks of this matrix are all zero
-        If noise is enabled, additionally create a third matrix that contains
-        all the nonzero elements of this big matrix.
-        Intended for GPU use only, designed for neural network inference.
+        Returns:
+            npt.NDArray: Dot product outputs with read noise added
         """
-        # Keep a copy of original matrix, both for construction of the expanded
-        # matrix and as a backup for later restoration if needed
+        if not (self.read_noise_params.enable and self.read_noise_params.lumped):
+            return output
 
-        Nx, Ny = self.matrix.shape
+        # Compute the lumped read noise as a weighted quadrature sum of errors
+        # with the input vector
+        sigma_outputs = xp.sqrt(self.noise_var_matrix @ (vector**2))
 
-        # Keep a copy of the original un-expanded matrix so that it can be
-        # restored with unexpand_matrix
-        self.matrix_original = self.matrix.copy()
+        # Add lumped read noise to outputs
+        output += sigma_outputs * xp.random.normal(size=output.shape).astype(
+            output.dtype
+        )
 
-        if not self.params.xbar.device.read_noise.enable:
-            self.matrix = xp.zeros(
-                (Ncopy * Nx, Ncopy * Ny),
-                dtype=self.matrix.dtype,
+        # If interleaved, compute and add negative weights lumped read noise
+        if noise_var_neg is not None:
+            sigma_outputs_neg = xp.sqrt(noise_var_neg @ (vector**2))
+            output += sigma_outputs_neg * xp.random.normal(size=output.shape).astype(
+                output.dtype
             )
-            for m in range(Ncopy):
-                x_start, x_end = m * Nx, (m + 1) * Nx
-                y_start, y_end = m * Ny, (m + 1) * Ny
-                self.matrix[x_start:x_end, y_start:y_end] = self.matrix_original
 
-        else:
-            # Block diagonal matrix for running MVMs
-            self.matrix = xp.zeros((Ncopy * Nx, Ncopy * Ny), dtype=self.matrix.dtype)
-            # Dense matrix with the same number of non-zeros as the block
-            # diagonal for applying read noise
-            self.matrix_dense = xp.zeros((Ncopy, Nx, Ny), dtype=self.matrix.dtype)
-            for m in range(Ncopy):
-                x_start, x_end = m * Nx, (m + 1) * Nx
-                y_start, y_end = m * Ny, (m + 1) * Ny
-                self.matrix[x_start:x_end, y_start:y_end] = self.matrix_original
-                self.matrix_dense[m, :, :] = self.matrix_original
-
-    def unexpand_matrix(self):
-        """Undo the expansion operation in expand_matrix."""
-        if hasattr(self, "matrix_original"):
-            self.matrix = self.matrix_original.copy()
-            self.matrix_dense = None
+        return output

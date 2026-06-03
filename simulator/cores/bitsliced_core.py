@@ -534,80 +534,52 @@ class BitslicedCore(WrapperCore):
             else:
                 # If using digital offset, a Gmin offset has to be subtracted,
                 # and the offset is input dependent
-                if (
-                    self.params.simulation.convolution.x_par > 1
-                    or self.params.simulation.convolution.y_par > 1
-                ):
-                    x_par = self.params.simulation.convolution.x_par
-                    y_par = self.params.simulation.convolution.y_par
-                    Noutputs = self.W_shape[0]
-                    x_reshape = vector.reshape(
-                        (x_par * y_par, len(vector) // (x_par * y_par)),
-                    )
-                    Gmin_bias = self.Gmin_norm * np.sum(x_reshape, axis=1)
-                    Gmin_bias = xp.repeat(Gmin_bias, Noutputs)
+                if len(vector.shape) == 1:
+                    Gmin_bias = self.Gmin_norm * xp.sum(vector)
                 else:
-                    if len(vector.shape) == 1:
-                        Gmin_bias = self.Gmin_norm * xp.sum(vector)
-                    else:
-                        if op == "mvm":
-                            if len(vector.shape) == 3:
-                                Gmin_bias = (
-                                    self.Gmin_norm * xp.sum(vector, axis=1)[:, None, :]
-                                )
-                            else:
-                                Gmin_bias = self.Gmin_norm * xp.sum(vector, axis=0)
+                    if op == "mvm":
+                        if len(vector.shape) == 3:
+                            Gmin_bias = (
+                                self.Gmin_norm * xp.sum(vector, axis=1)[:, None, :]
+                            )
                         else:
-                            if len(vector.shape) == 3:
-                                Gmin_bias = (
-                                    self.Gmin_norm * xp.sum(vector, axis=2)[:, :, None]
-                                )
-                            else:
-                                Gmin_bias = (
-                                    self.Gmin_norm * xp.sum(vector, axis=1)[:, None]
-                                )
+                            Gmin_bias = self.Gmin_norm * xp.sum(vector, axis=0)
+                    else:
+                        if len(vector.shape) == 3:
+                            Gmin_bias = (
+                                self.Gmin_norm * xp.sum(vector, axis=2)[:, :, None]
+                            )
+                        else:
+                            Gmin_bias = self.Gmin_norm * xp.sum(vector, axis=1)[:, None]
                 for i in range(Nslices):
                     output_slices[i] = (output_slices[i] - Gmin_bias) / Wrange_xbar
 
         # Analog offset subtraction: done before aggregation
         if not self.balanced and not self.digital_offset:
             for i in range(Nslices):
-                if (
-                    self.params.simulation.convolution.x_par > 1
-                    or self.params.simulation.convolution.y_par > 1
-                ):
-                    x_par = self.params.simulation.convolution.x_par
-                    y_par = self.params.simulation.convolution.y_par
-                    output_i = output_slices[i].reshape(
-                        (x_par * y_par, len(output_slices[i]) // (x_par * y_par)),
-                    )
-                    for m in range(x_par * y_par):
-                        output_i[m, 1:] = output_i[m, 1:] - output_i[m, 0]
-                    output_slices[i] = output_i[:, 1:].flatten()
+                if len(vector.shape) == 1:
+                    output_slices[i] = output_slices[i][1:] - output_slices[i][0]
                 else:
-                    if len(vector.shape) == 1:
-                        output_slices[i] = output_slices[i][1:] - output_slices[i][0]
-                    else:
-                        if op == "mvm":
-                            if len(vector.shape) == 3:
-                                output_slices[i] = (
-                                    output_slices[i][:, 1:, :]
-                                    - output_slices[i][:, 0, :][:, None, :]
-                                )
-                            else:
-                                output_slices[i] = (
-                                    output_slices[i][1:, :] - output_slices[i][0, :]
-                                )
+                    if op == "mvm":
+                        if len(vector.shape) == 3:
+                            output_slices[i] = (
+                                output_slices[i][:, 1:, :]
+                                - output_slices[i][:, 0, :][:, None, :]
+                            )
                         else:
-                            if len(vector.shape) == 3:
-                                output_slices[i] = (
-                                    output_slices[i][:, :, 1:]
-                                    - output_slices[i][:, :, 0][:, :, None]
-                                )
-                            else:
-                                output_slices[i] = (
-                                    output_slices[i][:, 1:] - output_slices[i][:, 0]
-                                )
+                            output_slices[i] = (
+                                output_slices[i][1:, :] - output_slices[i][0, :]
+                            )
+                    else:
+                        if len(vector.shape) == 3:
+                            output_slices[i] = (
+                                output_slices[i][:, :, 1:]
+                                - output_slices[i][:, :, 0][:, :, None]
+                            )
+                        else:
+                            output_slices[i] = (
+                                output_slices[i][:, 1:] - output_slices[i][:, 0]
+                            )
 
         # Aggregate bit slices
         output = output_slices[0]
@@ -618,33 +590,19 @@ class BitslicedCore(WrapperCore):
 
         # Digital offset subtraction: done after aggregation
         if not self.balanced and self.digital_offset:
-            if (
-                self.params.simulation.convolution.x_par > 1
-                or self.params.simulation.convolution.y_par > 1
-            ):
-                x_par = self.params.simulation.convolution.x_par
-                y_par = self.params.simulation.convolution.y_par
-                Noutputs = self.W_shape[0]
-                x_reshape = vector.reshape(
-                    (x_par * y_par, len(vector) // (x_par * y_par)),
-                )
-                offset = self.Woffset * xp.sum(x_reshape, axis=1)
-                offset = xp.repeat(offset, Noutputs)
-                output -= offset
+            if len(vector.shape) == 1:
+                output -= self.Woffset * xp.sum(vector)
             else:
-                if len(vector.shape) == 1:
-                    output -= self.Woffset * xp.sum(vector)
-                else:
-                    if op == "mvm":
-                        if len(vector.shape) == 3:
-                            output -= self.Woffset * xp.sum(vector, axis=1)[:, None, :]
-                        else:
-                            output -= self.Woffset * xp.sum(vector, axis=0)
+                if op == "mvm":
+                    if len(vector.shape) == 3:
+                        output -= self.Woffset * xp.sum(vector, axis=1)[:, None, :]
                     else:
-                        if len(vector.shape) == 3:
-                            output -= self.Woffset * xp.sum(vector, axis=2)[:, :, None]
-                        else:
-                            output -= self.Woffset * xp.sum(vector, axis=1)[:, None]
+                        output -= self.Woffset * xp.sum(vector, axis=0)
+                else:
+                    if len(vector.shape) == 3:
+                        output -= self.Woffset * xp.sum(vector, axis=2)[:, :, None]
+                    else:
+                        output -= self.Woffset * xp.sum(vector, axis=1)[:, None]
 
         output /= self.Wmax
         output /= (pow(2, Wbits - 1) - 1) / pow(2, Wbits - 1)
@@ -689,9 +647,6 @@ class BitslicedCore(WrapperCore):
             W -= self.Woffset
             if not self.digital_offset:
                 W = W[1:, :]
-        # Unexpand the matrix
-        if self.params.simulation.disable_fast_matmul:
-            W = W[: self.W_shape[0], : self.W_shape[1]]
         W /= self.Wmax
         W /= (pow(2, Wbits - 1) - 1) / pow(2, Wbits - 1)
         W *= 2 * self.max
@@ -731,45 +686,3 @@ class BitslicedCore(WrapperCore):
 
     def _wrapper_restore_matrix(self, matrix):
         raise ValueError("Not implemented")
-
-    def expand_matrix(self, Ncopy):
-        """Expands the matrix to allow for parallel simulation."""
-        # Calls expand_matrix in the inner cores
-        # Makes multiple copies of matrix to compute multiple MVMs in parallel
-        for i in range(self.Nslices):
-            if not self.balanced:
-                self.core_slices[i][0].expand_matrix(Ncopy)
-            else:
-                if not self.params.simulation.fast_balanced:
-                    self.core_slices[i][0].expand_matrix(Ncopy)
-                    self.core_slices[i][1].expand_matrix(Ncopy)
-                else:
-                    Nx, Ny = self.W_balanced[i].shape
-                    W_i_temp = self.W_balanced[i].copy()
-                    self.W_balanced[i] = xp.zeros(
-                        (Ncopy * Nx, Ncopy * Ny),
-                        dtype=self.W_balanced[i].dtype,
-                    )
-                    for m in range(Ncopy):
-                        x_start, x_end = m * Nx, (m + 1) * Nx
-                        y_start, y_end = m * Ny, (m + 1) * Ny
-                        self.W_balanced[i][
-                            x_start:x_end,
-                            y_start:y_end,
-                        ] = W_i_temp.copy()
-
-    def unexpand_matrix(self):
-        """Undoes the expand_matrix operation. Forms a single matrix."""
-        # Calls unexpand_matrix in the inner cores
-        for i in range(self.Nslices):
-            if not self.balanced:
-                self.core_slices[i][0].unexpand_matrix()
-            else:
-                if not self.params.simulation.fast_balanced:
-                    self.core_slices[i][0].unexpand_matrix()
-                    self.core_slices[i][1].unexpand_matrix()
-                else:
-                    self.W_balanced[i] = self.W_balanced[i][
-                        : self.W_shape[0],
-                        : self.W_shape[1],
-                    ]
