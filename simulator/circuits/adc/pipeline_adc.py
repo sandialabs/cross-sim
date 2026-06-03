@@ -45,12 +45,6 @@ class PipelineADC(IADC):
         # Pipeline ADC parameters
         self.pipeline_params = self.adc_params
 
-        # SW packing
-        Ncopy = (
-            self.simulation_params.convolution.x_par
-            * self.simulation_params.convolution.y_par
-        )
-
         # Set the reference voltage (normalized)
         self.Vref = xp.maximum(xp.abs(self.min), xp.abs(self.max))
 
@@ -90,17 +84,6 @@ class PipelineADC(IADC):
         C1 = C1[: matrix.shape[0], :]
         C2 = C2[: matrix.shape[0], :]
         Cpar = Cpar[: matrix.shape[0], :]
-
-        if Ncopy > 1:
-            x_par = self.simulation_params.convolution.x_par
-            y_par = self.simulation_params.convolution.y_par
-            self.comparator_offsets = xp.tile(
-                self.comparator_offsets,
-                (x_par * y_par, 1),
-            )
-            C1 = xp.tile(C1, (x_par * y_par, 1))
-            C2 = xp.tile(C2, (x_par * y_par, 1))
-            Cpar = xp.tile(Cpar, (x_par * y_par, 1))
 
         # Compute the beta and gamma factors
         self.beta = xp.zeros(C1.shape)

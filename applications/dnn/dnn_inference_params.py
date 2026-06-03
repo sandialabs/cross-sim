@@ -29,6 +29,7 @@ def dnn_inference_params(**kwargs):
     noise_model = kwargs.get("noise_model","none")
     alpha_noise = kwargs.get("alpha_noise",0.0)
     proportional_noise = kwargs.get("proportional_noise",False)
+    lumped_read_noise = kwargs.get("lumped_read_noise",False)
 
     t_drift = kwargs.get("t_drift",0)
     drift_model = kwargs.get("drift_model",None)
@@ -63,8 +64,6 @@ def dnn_inference_params(**kwargs):
     Icol_max = kwargs.get("Icol_max",0)
     digital_bias = kwargs.get("digital_bias",False)
 
-    x_par = kwargs.get("x_par",1)
-    y_par = kwargs.get("y_par",1)
     useGPU = kwargs.get("useGPU",False)
     gpu_id = kwargs.get("gpu_id",0)
 
@@ -84,10 +83,6 @@ def dnn_inference_params(**kwargs):
     params.simulation.useGPU = useGPU
     if useGPU:
         params.simulation.gpu_id = gpu_id
-
-    # Parameters for SW packing mode (only used if simulation.disable_fast_matmul = True)
-    params.simulation.convolution.x_par = int(x_par)
-    params.simulation.convolution.y_par = int(y_par)
 
     if ideal:
         return params
@@ -131,6 +126,7 @@ def dnn_inference_params(**kwargs):
     elif noise_model != "generic" and noise_model != "none":
         params.xbar.device.read_noise.enable = True
         params.xbar.device.read_noise.model = noise_model
+    params.xbar.device.read_noise.lumped = lumped_read_noise
 
     ##### Programming error
     if error_model == "generic" and alpha_error > 0:

@@ -33,12 +33,6 @@ class CyclicADC(IADC):
         # Cyclic ADC parameters
         self.cyclic_params = self.adc_params
 
-        # SW packing
-        Ncopy = (
-            self.simulation_params.convolution.x_par
-            * self.simulation_params.convolution.y_par
-        )
-
         # Set the reference voltage (normalized)
         self.Vref = xp.maximum(xp.abs(self.min), xp.abs(self.max))
 
@@ -74,17 +68,6 @@ class CyclicADC(IADC):
         C1 = C1[: matrix.shape[0]]
         C2 = C2[: matrix.shape[0]]
         Cpar = Cpar[: matrix.shape[0]]
-
-        if Ncopy > 1:
-            x_par = self.simulation_params.convolution.x_par
-            y_par = self.simulation_params.convolution.y_par
-            self.comparator_offsets = xp.tile(
-                self.comparator_offsets,
-                (x_par * y_par, 1),
-            )
-            C1 = xp.tile(C1, x_par * y_par)
-            C2 = xp.tile(C2, x_par * y_par)
-            Cpar = xp.tile(Cpar, x_par * y_par)
 
         # Compute the beta and gamma factors
         self.beta = C1 / (C1 + C2 + Cpar)

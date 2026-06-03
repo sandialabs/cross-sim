@@ -134,16 +134,6 @@ class AnalogConvolution(AnalogLayer):
         """
         self.core.set_matrix(matrix, verbose=verbose)
 
-        # Expand the cores if x_par or y_par > 1
-        Ncopy = (
-            self.params.simulation.convolution.x_par
-            * self.params.simulation.convolution.y_par
-        )
-        if Ncopy > 1 and self.params.simulation.disable_fast_matmul:
-            for j in range(self.core.num_cores_row):
-                for k in range(self.core.num_cores_col):
-                    self.core.cores[j][k].expand_matrix(Ncopy)
-
     def get_core_weights(self) -> tuple[npt.NDArray, npt.NDArray | None]:
         """Gets the weight and bias matrices with errors applied.
 
@@ -245,9 +235,7 @@ class AnalogConvolution(AnalogLayer):
 
     def _synchronize_params(self) -> None:
         """Synchronize the params object from the internal parameters."""
-        # Don't modify the following params:
-        # x_par, y_par are pure inputs
-        # Nwindows is derived by the caller
+        # Don't modify Nwindows which is derived by the caller
 
         if isinstance(self.params, CrossSimParameters):
             self.params.simulation.convolution.is_conv_core = True
@@ -288,16 +276,6 @@ class AnalogConvolution(AnalogLayer):
         else:
             value_ = value
         self.core.__setitem__(key, value_)
-
-        # Then need to expand the cores if x_par or y_par > 1
-        Ncopy = (
-            self.params.simulation.convolution.x_par
-            * self.params.simulation.convolution.y_par
-        )
-        if Ncopy > 1 and self.params.simulation.disable_fast_matmul:
-            for j in range(self.core.num_cores_row):
-                for k in range(self.core.num_cores_col):
-                    self.core.cores[j][k].expand_matrix(Ncopy)
 
 
 class AnalogConvolution1D(AnalogConvolution):
@@ -381,7 +359,6 @@ class AnalogConvolution1D(AnalogConvolution):
         Noc = self.Noc
         Nrows = self.core.shape[1]
         (strideX,) = self.stride
-        x_par = self.params.simulation.convolution.x_par
         NrowsX = Kx * Nic  # number of rows per sliding window MVM
 
         # Number of sliding windows
@@ -410,71 +387,23 @@ class AnalogConvolution1D(AnalogConvolution):
             # Allocate memory for the output
             M_out = xp.empty((Noc, Nx_out), dtype=M_input_.dtype)
 
-            for i in range(0, Nx_out, x_par):
-                x_block = x_par if (Nx_out - i) >= x_par else Nx_out - i
+            for i in range(Nx_out):
                 x_start = i * strideX
                 if Kx == 1:
                     if not self.bias_rows:
-                        Min_large = xp.zeros(
-                            int(Nrows * x_par),
-                            dtype=M_input_.dtype,
-                        )
-                        Min_block = (
-                            M_input_[
-                                :,
-                                x_start : (x_start + strideX * x_block) : strideX,
-                            ]
-                            .transpose((1, 0))
-                            .flatten()
-                        )
-                        Min_large[: len(Min_block)] = Min_block
+                        x_win = M_input_[:, x_start]
                     else:
-                        Min_large = xp.ones(
-                            int(Nrows * x_par),
-                            dtype=M_input_.dtype,
-                        )
-                        v_start, v_end = 0, NrowsX
-                        for _xxp in range(x_block):
-                            Min_ij = M_input_[:, x_start]
-                            Min_large[v_start:v_end] = Min_ij
-                            v_start += Nrows
-                            v_end += Nrows
-                        x_start += strideX
-
+                        x_win = xp.ones(Nrows, dtype=M_input_.dtype)
+                        x_win[:NrowsX] = M_input_[:, x_start]
                 else:
-                    Min_ij = xp.zeros(
-                        (Nic * x_par, Kx),
-                        dtype=M_input_.dtype,
-                    )
-                    x_end = x_start + Kx
-                    v_start, v_end = 0, Nic
-
-                    for _xxp in range(x_block):
-                        Min_ij[v_start:v_end, :] = M_input_[
-                            :,
-                            x_start:x_end,
-                        ]
-                        v_start += Nic
-                        v_end += Nic
-                        x_start += strideX
-                        x_end += strideX
-
+                    Min_ij = M_input_[:, x_start : (x_start + Kx)]
                     if self.bias_rows:
-                        Min_large = xp.ones(
-                            (x_block, Nrows),
-                            dtype=M_input_.dtype,
-                        )
-                        Min_ij = Min_ij.reshape((x_block, NrowsX))
-                        Min_large[:, : -self.bias_rows] = Min_ij
+                        x_win = xp.ones(Nrows, dtype=M_input_.dtype)
+                        x_win[:NrowsX] = Min_ij.reshape(NrowsX)
                     else:
-                        Min_large = Min_ij
+                        x_win = Min_ij.reshape(NrowsX)
+                M_out = self.core.matvec(x_win)
 
-                M_out_p = self.core.mat_multivec(Min_large)
-                # The line below is pure diabolical sorcery
-                M_out[:, i : (i + x_block)] = M_out_p.reshape(
-                    (Noc, x_par),
-                    order="F",
-                ).transpose((0, 1))[:, :x_block]
             M_outs[b] = M_out
 
         if no_batch:
@@ -648,15 +577,11 @@ class AnalogConvolution2D(AnalogConvolution):
         Noc = self.Noc
         Nrows = self.core.shape[1]
         strideX, strideY = self.stride
-        x_par = self.params.simulation.convolution.x_par
-        y_par = self.params.simulation.convolution.y_par
         NrowsX = Kx * Ky * Nic  # number of rows per sliding window MVM
 
         # Number of sliding windows
-        Nx_out, Ny_out = (
-            (M_input.shape[2] - Kx) // strideX + 1,
-            (M_input.shape[3] - Ky) // strideY + 1,
-        )
+        Nx_out = (Nx - Kx) // strideX + 1
+        Ny_out = (Ny - Ky) // strideY + 1
 
         # Initialize data container and params for input and ADC profiling
         if self.last_input == 0:
@@ -681,83 +606,28 @@ class AnalogConvolution2D(AnalogConvolution):
             # Allocate memory for the output
             M_out = xp.empty((Noc, Nx_out, Ny_out), dtype=M_input_.dtype)
 
-            for i in range(0, Nx_out, x_par):
-                x_block = x_par if (Nx_out - i) >= x_par else Nx_out - i
-                for j in range(0, Ny_out, y_par):
-                    y_block = y_par if (Ny_out - j) >= y_par else Ny_out - j
-                    x_start = i * strideX
-                    y_start0 = j * strideY
+            for i in range(Nx_out):
+                x_start = i * strideX
+                for j in range(Ny_out):
+                    y_start = j * strideY
                     if Kx == 1 and Ky == 1:
                         if not self.bias_rows:
-                            Min_large = xp.zeros(
-                                (Nrows * x_par * y_par),
-                                dtype=M_input_.dtype,
-                            )
-                            Min_block = (
-                                M_input_[
-                                    :,
-                                    x_start : (x_start + strideX * x_block) : strideX,
-                                    y_start0 : (y_start0 + strideY * y_block) : strideY,
-                                ]
-                                .transpose((1, 2, 0))
-                                .flatten()
-                            )
-                            Min_large[: len(Min_block)] = Min_block
+                            Min_large = M_input_[:, x_start, y_start]
                         else:
-                            Min_large = xp.ones(
-                                int(Nrows * x_par * y_par),
-                                dtype=M_input_.dtype,
-                            )
-                            v_start, v_end = 0, NrowsX
-                            for _xxp in range(x_block):
-                                y_start = y_start0
-                                for _yyp in range(y_block):
-                                    Min_ij = M_input_[:, x_start, y_start]
-                                    Min_large[v_start:v_end] = Min_ij
-                                    y_start += strideY
-                                    v_start += Nrows
-                                    v_end += Nrows
-                                x_start += strideX
+                            Min_large = xp.ones(Nrows, dtype=M_input_.dtype)
+                            Min_large[:NrowsX] = M_input_[:, x_start, y_start]
                     else:
-                        Min_ij = xp.zeros(
-                            (Nic * x_par * y_par, Kx, Ky),
-                            dtype=M_input_.dtype,
+                        x_end, y_end = x_start + Kx, y_start + Ky
+                        Min_ij = M_input_[:, x_start:x_end, y_start:y_end].reshape(
+                            NrowsX
                         )
-                        x_end = x_start + Kx
-                        v_start, v_end = 0, Nic
-
-                        for _xxp in range(x_block):
-                            y_start = y_start0
-                            y_end = y_start + Ky
-                            for _yyp in range(y_block):
-                                Min_ij[v_start:v_end, :, :] = M_input_[
-                                    :,
-                                    x_start:x_end,
-                                    y_start:y_end,
-                                ]
-                                y_start += strideY
-                                y_end += strideY
-                                v_start += Nic
-                                v_end += Nic
-                            x_start += strideX
-                            x_end += strideX
-
                         if self.bias_rows:
-                            Min_large = xp.ones(
-                                (x_block * y_block, Nrows),
-                                dtype=M_input_.dtype,
-                            )
-                            Min_ij = Min_ij.reshape((x_block * y_block, NrowsX))
-                            Min_large[:, : -self.bias_rows] = Min_ij
+                            Min_large = xp.ones(Nrows, dtype=M_input_.dtype)
+                            Min_large[:NrowsX] = Min_ij
                         else:
                             Min_large = Min_ij
+                    M_out[:, i, j] = self.core.matvec(Min_large)
 
-                    M_out_p = self.core.mat_multivec(Min_large)
-                    # The line below is pure diabolical sorcery
-                    M_out[:, i : (i + x_block), j : (j + y_block)] = M_out_p.reshape(
-                        (Noc, y_par, x_par),
-                        order="F",
-                    ).transpose((0, 2, 1))[:, :x_block, :y_block]
             M_outs[b] = M_out
 
         if no_batch:

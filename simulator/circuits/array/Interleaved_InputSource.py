@@ -102,10 +102,6 @@ class InterleavedInputSourceArray(IArray):
             Ires = xp.cumsum(Ires, 1)
             Ires_pos = xp.cumsum(Ires_pos[::-1], 0)[::-1]
             Ires_neg = xp.cumsum(Ires_neg[::-1], 0)[::-1]
-            if self.useMask:
-                Ires *= self.mask
-                Ires_pos *= self.mask
-                Ires_neg *= self.mask
 
             if len(Ires.shape) == 4 and isinstance(self.Rp_out_mat, xp.ndarray):
                 Vdrops_col = xp.cumsum(

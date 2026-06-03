@@ -292,10 +292,11 @@ class SONOS(EmptyDevice):
 
         A_noise, B_noise = 12.58037, 215.36557
 
-        # Apply read noise
+        # Compute read noise sigma
         sigma_I = xp.maximum(A_noise - A_noise * xp.exp(-I / B_noise), 0)
         sigma_W = sigma_I / (self.Imax - self.Imin)
 
+        # Apply read noise
         if sigma_W.any():
             randMat = xp.random.normal(
                 scale=self.Grange_norm,
@@ -307,3 +308,16 @@ class SONOS(EmptyDevice):
         input_ = input_.clip(0, None)
 
         return input_
+
+    def read_noise_variance(self, input_):
+        """Compute the noise variance for every device."""
+        I = self._calculate_current(input_)
+
+        A_noise, B_noise = 12.58037, 215.36557
+
+        # Compute read noise variance
+        sigma_I = xp.maximum(A_noise - A_noise * xp.exp(-I / B_noise), 0)
+        sigma_W = sigma_I / (self.Imax - self.Imin)
+        var_W = sigma_W**2
+
+        return var_W

@@ -367,10 +367,6 @@ class BalancedCore(WrapperCore):
         else:
             output = self.W_balanced.copy()
 
-        # Unexpand the matrix
-        if self.params.simulation.disable_fast_matmul:
-            output = output[: self.W_shape[0], : self.W_shape[1]]
-
         output /= self.params.xbar.device.Grange_norm
         output *= self.max
         return output
@@ -385,32 +381,3 @@ class BalancedCore(WrapperCore):
         matrix = np.split(matrix, 2)
         self.core_pos._restore_matrix(matrix[0])
         self.core_neg._restore_matrix(matrix[1])
-
-    def expand_matrix(self, Ncopy):
-        """Expands the matrix to allow for parallel simulation."""
-        # Calls expand_matrix in the inner cores
-        # Makes multiple copies of matrix to compute multiple MVMs in parallel
-        if not self.params.simulation.fast_balanced:
-            self.core_pos.expand_matrix(Ncopy)
-            self.core_neg.expand_matrix(Ncopy)
-        else:
-            Nx, Ny = self.W_balanced.shape
-            W_temp = self.W_balanced.copy()
-            self.W_shape = self.W_balanced.shape
-            self.W_balanced = xp.zeros(
-                (Ncopy * Nx, Ncopy * Ny),
-                dtype=self.W_balanced.dtype,
-            )
-            for m in range(Ncopy):
-                x_start, x_end = m * Nx, (m + 1) * Nx
-                y_start, y_end = m * Ny, (m + 1) * Ny
-                self.W_balanced[x_start:x_end, y_start:y_end] = W_temp.copy()
-
-    def unexpand_matrix(self):
-        """Undoes the expand_matrix operation. Forms a single matrix."""
-        if not self.params.simulation.fast_balanced:
-            # Calls unexpand_matrix in the inner cores
-            self.core_pos.unexpand_matrix()
-            self.core_neg.unexpand_matrix()
-        else:
-            self.W_balanced = self.W_balanced[: self.W_shape[0], : self.W_shape[1]]

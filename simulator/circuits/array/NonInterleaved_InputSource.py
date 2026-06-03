@@ -76,9 +76,6 @@ class NoninterleavedInputSourceArray(IArray):
             # Calculate parasitic voltage drops
             Isum_col = xp.cumsum(Ires, 1)
             Isum_row = xp.cumsum(Ires[::-1], 0)[::-1]
-            if self.useMask:
-                Isum_col *= self.mask
-                Isum_row *= self.mask
 
             if len(Isum_col.shape) == 4 and isinstance(self.Rp_out_mat, xp.ndarray):
                 Vdrops_col = xp.cumsum(
